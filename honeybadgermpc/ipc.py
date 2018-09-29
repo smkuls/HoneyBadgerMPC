@@ -55,6 +55,7 @@ class Listener(object):
     def __init__(self, q, port):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        print('port',port)
         server.bind(('', port))
         server.listen(10)
         server.setblocking(False)
@@ -164,9 +165,9 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
     try:
-        config = {i: NodeDetails(prefix+str(i), port) for i in range(N)}
+        config = {i: NodeDetails(prefix+str(i), port+i) for i in range(N)}
         loop.run_until_complete(runProgramAsProcesses(test_prog1, config, N, t, id))
-        config = {i: NodeDetails(prefix+str(i), port-1000) for i in range(N)}
+        config = {i: NodeDetails(prefix+str(i), port+i-1000) for i in range(N)}
         loop.run_until_complete(runProgramAsProcesses(test_prog2, config, N, t, id))
     finally:
         loop.close()
