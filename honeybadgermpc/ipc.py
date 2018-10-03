@@ -1,10 +1,9 @@
-import _pickle as pickle
+import pickle
 import asyncio
 import sys
 import os
 import struct
 import socket
-
 
 class Sender(object):
     def __init__(self):
