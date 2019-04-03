@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from honeybadgermpc.hbavss import HbAvssLight
+from honeybadgermpc.hbavss import HbAvssBatch
 from honeybadgermpc.avss_value_processor import AvssValueProcessor
 from honeybadgermpc.protocols.crypto.boldyreva import dealer
 from honeybadgermpc.betterpairing import G1, ZR
@@ -56,13 +56,11 @@ class PreProcessingBase(ABC):
         assert type(inputs) in [tuple, list]
         avss_tasks = []
         avss_tasks.append(asyncio.create_task(
-            self.avss_instance.avss_parallel(
-                avss_id, len(inputs), values=inputs, dealer_id=self.my_id)))
+            self.avss_instance.avss(avss_id, values=inputs, dealer_id=self.my_id)))
         for i in range(self.n):
             if i != self.my_id:
                 avss_tasks.append(asyncio.create_task(
-                    self.avss_instance.avss_parallel(
-                        avss_id, len(inputs), dealer_id=i)))
+                    self.avss_instance.avss(avss_id, dealer_id=i)))
         await asyncio.gather(*avss_tasks)
 
     async def _runner(self):
@@ -98,7 +96,7 @@ class PreProcessingBase(ABC):
         n, t, my_id = self.n, self.t, self.my_id
         send, recv = self.get_send_recv(f'{self.tag}-AVSS')
         g, h, pks, sk = get_avss_params(n, t, my_id)
-        self.avss_instance = HbAvssLight(pks, sk, g, h, n, t, my_id, send, recv)
+        self.avss_instance = HbAvssBatch(pks, sk, g, h, n, t, my_id, send, recv)
         self.avss_instance.__enter__()
         self.tasks.append(asyncio.create_task(self._runner()))
 

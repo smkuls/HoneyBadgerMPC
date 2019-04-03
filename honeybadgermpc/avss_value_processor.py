@@ -7,6 +7,12 @@ from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 from honeybadgermpc.sequencer import Sequencer
 
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
+# Uncomment this when you want logs from this file.
+logger.setLevel(logging.NOTSET)
+
+
 class AvssValueProcessor(object):
     # How long to wait before running another instance of ACS?
     ACS_PERIOD_IN_SECONDS = 1
@@ -68,39 +74,42 @@ class AvssValueProcessor(object):
         return await self.output_queue.get()
 
     async def _recv_loop(self):
-        logging.debug("[%d] Starting _recv_loop", self.my_id)
+        logger.debug("[%d] Starting _recv_loop", self.my_id)
         while True:
-            dealer_id, avss_id, avss_value = await self.get_input()
+            dealer_id, avss_id, avss_values = await self.get_input()
             assert type(dealer_id) is int
             assert dealer_id >= 0 and dealer_id < self.n
             assert type(avss_id) is int
+            assert type(avss_values) is list
             assert avss_id >= 0
 
-            self.sequencers[dealer_id].add((avss_id, avss_value))
+            self.sequencers[dealer_id].add((avss_id, avss_values))
 
             # Process the values only if they are in order.
             while self.sequencers[dealer_id].is_next_available():
-                _, avss_value = self.sequencers[dealer_id].get()
+                _, avss_values = self.sequencers[dealer_id].get()
 
-                # Add the value to the input list based on who dealt the value
-                self.inputs_per_dealer[dealer_id].append(avss_value)
+                for avss_value in avss_values:
+                    # Add the value to the input list based on who dealt the value
+                    self.inputs_per_dealer[dealer_id].append(avss_value)
 
-                # If this value has already been agreed upon by other parties
-                # then it means that its Future has been added to the output list.
-                # So we need to set the result of that future to be equal to this value.
-                idx = len(self.inputs_per_dealer[dealer_id])-1
-                if idx < len(self.outputs_per_dealer[dealer_id]):
-                    assert not self.outputs_per_dealer[dealer_id][idx].done()
-                    self.outputs_per_dealer[dealer_id][idx].set_result(avss_value)
+                    # If this value has already been agreed upon by other parties
+                    # then it means that its Future has been added to the output
+                    # list. So we need to set the result of that future to be equal
+                    # to this value.
+                    idx = len(self.inputs_per_dealer[dealer_id])-1
+                    if idx < len(self.outputs_per_dealer[dealer_id]):
+                        assert not self.outputs_per_dealer[dealer_id][idx].done()
+                        self.outputs_per_dealer[dealer_id][idx].set_result(avss_value)
 
     async def _acs_runner(self):
-        logging.debug("[%d] Starting ACS runner", self.my_id)
+        logger.debug("[%d] Starting ACS runner", self.my_id)
         acs_counter = 0
         while True:
             # Sleep first, then run so that you wait until some values are received
             await asyncio.sleep(AvssValueProcessor.ACS_PERIOD_IN_SECONDS)
             sid = f"AVSS-ACS-{acs_counter}"
-            logging.debug("[%d] ACS Id: %s", self.my_id, sid)
+            logger.debug("[%d] ACS Id: %s", self.my_id, sid)
             await self._run_acs_to_process_values(sid)
             acs_counter += 1
 
@@ -129,10 +138,10 @@ class AvssValueProcessor(object):
             else:
                 acs_outputs[i] = default_acs_output[::]
 
-        logging.debug("[%d] ACS output: %s", self.my_id, acs_outputs)
+        logger.debug("[%d] ACS output: %s", self.my_id, acs_outputs)
         counts_view_at_all_nodes = list(map(list, zip(*acs_outputs)))
 
-        logging.debug("[%d] Counts View: %s", self.my_id, counts_view_at_all_nodes)
+        logger.debug("[%d] Counts View: %s", self.my_id, counts_view_at_all_nodes)
 
         # After you have every node's view, you find the kth largest element in each
         # row where k = n-(t+1). This element denotes the minimum number of values
@@ -223,7 +232,7 @@ class AvssValueProcessor(object):
         value_counts_per_dealer = [len(self.inputs_per_dealer[i]) for i in range(self.n)]
 
         acs_input = dumps(value_counts_per_dealer)
-        logging.debug("[%d] ACS [%s] Input:%s", self.my_id, sid, value_counts_per_dealer)
+        logger.debug("[%d] ACS [%s] Input:%s", self.my_id, sid, value_counts_per_dealer)
 
         send, recv = self.get_send_recv(sid)
 
@@ -237,14 +246,14 @@ class AvssValueProcessor(object):
         assert type(acs_outputs) is tuple
         assert len(acs_outputs) == self.n
 
-        logging.debug("[%d] ACS [%s] completed", self.my_id, sid)
+        logger.debug("[%d] ACS [%s] completed", self.my_id, sid)
 
         # The output of ACS is a tuple of `n` entries.
         # Each entry denotes the count of AVSSed values which
         # that node has received from each of the other nodes.
         self._process_acs_output(acs_outputs)
 
-        logging.debug("[%d] All values processed [%s]", self.my_id, sid)
+        logger.debug("[%d] All values processed [%s]", self.my_id, sid)
 
     def __enter__(self):
         self.tasks.append(asyncio.create_task(self._recv_loop()))

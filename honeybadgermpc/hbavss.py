@@ -1,12 +1,16 @@
 import logging
 import asyncio
 from pickle import dumps, loads
+from honeybadgermpc.field import GF
+from honeybadgermpc.elliptic_curve import Subgroup
 from honeybadgermpc.betterpairing import ZR
-from honeybadgermpc.polynomial import polynomials_over
+from honeybadgermpc.ntl.helpers import fft
+from honeybadgermpc.polynomial import polynomials_over, EvalPoint
 from honeybadgermpc.poly_commit import PolyCommit
 from honeybadgermpc.symmetric_crypto import SymmetricCrypto
 from honeybadgermpc.exceptions import HoneyBadgerMPCError
 from honeybadgermpc.protocols.reliablebroadcast import reliablebroadcast
+
 
 # TODO: Move these to a separate file instead of using it from batch_reconstruction.py
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
@@ -45,6 +49,10 @@ class HbAvss(object):
         self.output_queue = asyncio.Queue()
 
         self.field = ZR
+        # Need this to use the GF based field and not ZR.
+        # Using ZR results in different omegas even with a seed.
+        # Initialize this at once to ensure that all nodes get the same omega.
+        self.point = EvalPoint(GF.get(Subgroup.BLS12_381), self.n, True)
         self.poly = polynomials_over(self.field)
 
     def __enter__(self):
@@ -202,23 +210,25 @@ class HbAvssBatch(HbAvss):
 
         commitments, ephemeral_public_key, encrypted_witnesses = loads(
             dispersal_msg)
-        secret_size = len(commitments)
+        batch_size = len(commitments)
 
         # all_encrypted_witnesses: n
         shared_key = pow(ephemeral_public_key, self.private_key)
 
-        shares = [None] * secret_size
-        witnesses = [None] * secret_size
+        shares = [None] * batch_size
+        witnesses = [None] * batch_size
         # Decrypt
-        for k in range(secret_size):
+        for k in range(batch_size):
             shares[k], witnesses[k] = SymmetricCrypto.decrypt(
                 str(shared_key).encode("utf-8"),
-                encrypted_witnesses[self.my_id * secret_size + k])
+                encrypted_witnesses[self.my_id * batch_size + k])
 
         # verify & send all ok
-        for i in range(secret_size):
-            if not self.poly_commit.verify_eval(
-                    commitments[i], self.my_id+1, shares[i], witnesses[i]):
+        verification_point = int(pow(self.point.omega, self.my_id))
+        for k in range(batch_size):
+            verified = self.poly_commit.verify_eval(
+                commitments[k], verification_point, shares[k], witnesses[k])
+            if not verified:
                 # will be replaced by sending out IMPLICATE message later
                 # multicast(HbAVSSMessageType.IMPLICATE)
                 logging.error("PolyCommit verification failed.")
@@ -247,33 +257,48 @@ class HbAvssBatch(HbAvss):
             if avss_msg == HbAVSSMessageType.READY and sender not in ready_set:
                 ready_set.add(sender)
 
+        # Output the share as an integer so it is not tied to a type like ZR/GFElement
+        self.output_queue.put_nowait((dealer_id, avss_id, list(map(int, shares))))
+
         return shares
 
     def _get_dealer_msg(self, values):
         # Sample a random degree-(t,t) bivariate polynomial φ(·,·)
         # such that each φ(0,k) = sk and φ(i,k) is Pi’s share of sk
-        secret_size = len(values)
-        phi = [None] * secret_size
-        commitments = [None] * secret_size
-        aux_poly = [None] * secret_size
+        batch_size = len(values)
+        phi = [None] * batch_size
+        commitments = [None] * batch_size
+        aux_poly = [None] * batch_size
         # for k ∈ [t+1]
         #   Ck, auxk <- PolyCommit(SP,φ(·,k))
-        for k in range(secret_size):
+        for k in range(batch_size):
             phi[k] = self.poly.random(self.t, values[k])
             commitments[k], aux_poly[k] = self.poly_commit.commit(phi[k])
 
         ephemeral_secret_key = self.field.random()
         ephemeral_public_key = pow(self.g, ephemeral_secret_key)
+
         # for each party Pi and each k ∈ [t+1]
         #   1. w[i][k] <- CreateWitnesss(Ck,auxk,i)
         #   2. z[i][k] <- EncPKi(φ(i,k), w[i][k])
-        z = [None] * self.n * secret_size
+        z = [None] * self.n * batch_size
+        witnesses = [None] * batch_size
+        evaluations = [None] * batch_size
+
+        omega, modulus = int(self.point.omega), self.point.field.modulus
+        order = self.point.order
+        def get_coeffs(poly): return list(map(int, poly.coeffs))
+
+        for k in range(batch_size):
+            witnesses[k] = fft(get_coeffs(aux_poly[k]), omega, modulus, order)[:self.n]
+            evaluations[k] = fft(get_coeffs(phi[k]), omega, modulus, order)[:self.n]
+
         for i in range(self.n):
             shared_key = pow(self.public_keys[i], ephemeral_secret_key)
-            for k in range(secret_size):
-                witness = self.poly_commit.create_witness(aux_poly[k], i+1)
-                z[i * secret_size + k] = SymmetricCrypto.encrypt(
-                    str(shared_key).encode("utf-8"), (phi[k](i+1), witness))
+            for k in range(batch_size):
+                z[i * batch_size + k] = SymmetricCrypto.encrypt(
+                    str(shared_key).encode("utf-8"), (
+                        evaluations[k][i], witnesses[k][i]))
 
         return dumps((commitments, ephemeral_public_key, z))
 

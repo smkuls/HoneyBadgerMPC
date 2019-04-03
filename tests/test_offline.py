@@ -23,7 +23,7 @@ async def test_get_random(test_router, rust_field):
         assert len(shares) == n
 
     async def _prog(context):
-        opened_share = await context.Share(shares[context.myid]).open()
+        opened_share = await context.ShareArray([shares[context.myid]]).open()
         return opened_share
 
     program_runner = TaskProgramRunner(n, t)

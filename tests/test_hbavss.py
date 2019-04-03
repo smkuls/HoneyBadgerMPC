@@ -44,6 +44,7 @@ async def test_hbavss_light(test_router):
 
 @mark.asyncio
 async def test_hbavss_batch(test_router):
+    from honeybadgermpc.polynomial import EvalPoint
     t = 2
     n = 3*t + 1
 
@@ -66,9 +67,10 @@ async def test_hbavss_batch(test_router):
 
     fliped_shares = list(map(list, zip(*shares)))
     recovered_values = []
+    point = EvalPoint(ZR, n, True)
     for item in fliped_shares:
         recovered_values.append(polynomials_over(
-            ZR).interpolate_at(zip(range(1, n+1), item)))
+            ZR).interpolate_at(zip([pow(point.omega, i) for i in range(n)], item)))
 
     assert recovered_values == values
 
