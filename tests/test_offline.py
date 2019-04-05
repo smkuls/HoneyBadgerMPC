@@ -47,10 +47,10 @@ async def test_get_randoms(test_router, rust_field, n, t, b):
     with ExitStack() as stack:
         random_generators = [None]*n
         tasks = [None]*n*b
+        k = randint(1, 10)
         for i in range(n):
             # k => each node has a different batch size
             # for the number of values which it AVSSes
-            k = randint(1, 10)
             random_generators[i] = RandomGenerator(n, t, i, sends[i], recvs[i], k)
             stack.enter_context(random_generators[i])
             for j in range(b):
@@ -90,7 +90,7 @@ async def test_get_triple(test_router, rust_field):
         assert len(shares) == n
 
     async def _prog(context):
-        a, b, ab = await context.ShareArray(list(shares[context.myid])).open()
+        a, b, ab = await context.ShareArray(shares[context.myid][0]).open()
         assert a*b == ab
         return tuple((a, b, ab))
 
@@ -115,10 +115,10 @@ async def test_get_triples(test_router, rust_field, n, t, b):
     with ExitStack() as stack:
         triple_generators = [None]*n
         tasks = [None]*n*b
+        k = randint(50, 100)
         for i in range(n):
             # k => each node has a different batch size
             # for the number of values which it AVSSes
-            k = randint(50, 100)
             triple_generators[i] = TripleGenerator(n, t, i, sends[i], recvs[i], k)
             stack.enter_context(triple_generators[i])
             for j in range(b):
@@ -126,6 +126,8 @@ async def test_get_triples(test_router, rust_field, n, t, b):
 
         shares = await asyncio.gather(*tasks)
         assert len(shares) == n*b
+
+    print("SHARES RETRIEVED")
 
     async def _prog(context):
         s = context.myid*b

@@ -134,7 +134,6 @@ async def batch_reconstruct(secret_shares, p, t, n, myid, send, recv, config=Non
         secret_shares = [random.randint(0, p - 1) for _ in range(len(secret_shares))]
 
     point = EvalPoint(fp, n, use_fft=use_fft)
-    logging.info("USING FFT: %s, Omega: %s", use_fft, point.omega)
     bench_logger = logging.LoggerAdapter(logging.getLogger("benchmark_logger"),
                                          {"node_id": myid})
     subscribe_task, subscribe = subscribe_recv(recv)

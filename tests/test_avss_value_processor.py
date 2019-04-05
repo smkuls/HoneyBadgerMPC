@@ -19,6 +19,7 @@ async def test_avss_value_processor_with_diff_inputs(test_router):
     ]
 
     get_tasks = [None]*n
+    acs_tasks = [None]*n
     pk, sks = dealer(n, t+1)
     avss_value_procs = [None]*n
     input_qs = [None]*n
@@ -31,8 +32,10 @@ async def test_avss_value_processor_with_diff_inputs(test_router):
             avss_value_procs[i] = AvssValueProcessor(
                 pk, sks[i], n, t, i, sends[i], recvs[i], input_qs[i].get)
             stack.enter_context(avss_value_procs[i])
+            acs_tasks[i] = asyncio.create_task(avss_value_procs[i].run_acs(0))
             get_tasks[i] = asyncio.create_task(avss_value_procs[i].get())
 
+        await asyncio.gather(*acs_tasks)
         futures = await asyncio.gather(*get_tasks)
         for i, future in enumerate(futures):
             assert type(future) is asyncio.Future
@@ -41,7 +44,7 @@ async def test_avss_value_processor_with_diff_inputs(test_router):
                 assert not future.done()
             else:
                 # all other nodes have received the value dealt from node 0
-                assert (await future) == f"0{i}"
+                assert (await future) == [f"0{i}"]
 
         # this is based on node_inputs
         inputs = [
@@ -72,7 +75,7 @@ async def test_avss_value_processor_with_diff_inputs(test_router):
                 # only nodes 0 and 2 have received the value dealt by 2
                 # executing this sequentially also ensurs that ACS is not run again
                 # since this value is already available
-                assert (await (await avss_value_procs[i].get())) == f"2{i}"
+                assert (await (await avss_value_procs[i].get())) == [f"2{i}"]
             else:
                 # nodes 1 and 3 have not received the value dealt by 2
                 assert not (await avss_value_procs[i].get()).done()
@@ -261,7 +264,7 @@ async def test_with_agreed_values_on_same_node_with_input(k, acs_outputs):
         for i in range(k):
             assert type(proc.outputs_per_dealer[my_id][i]) is asyncio.Future
             assert proc.outputs_per_dealer[my_id][i].done()
-            assert (await proc.outputs_per_dealer[my_id][i]) == i
+            assert (await proc.outputs_per_dealer[my_id][i]) == [i]
 
         # This is set by another method and should not have been updated.
         assert all(proc.next_idx_to_return_per_dealer[i] == 0 for i in range(n))
@@ -318,7 +321,7 @@ async def test_with_agreed_values_on_another_node_with_input(k, acs_outputs):
         assert [len(proc.outputs_per_dealer[i]) for i in range(n)] == [0, k, 0, 0]
         for i in range(k):
             assert proc.outputs_per_dealer[sender_id][i].done()
-            assert (await proc.outputs_per_dealer[sender_id][i]) == i
+            assert (await proc.outputs_per_dealer[sender_id][i]) == [i]
 
         # This is set by another method and should not have been updated.
         assert all(proc.next_idx_to_return_per_dealer[i] == 0 for i in range(n))

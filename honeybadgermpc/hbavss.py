@@ -80,7 +80,9 @@ class HbAvssLight(HbAvss):
         shared_key = pow(ephemeral_public_key, self.private_key)
         share, witness = SymmetricCrypto.decrypt(
             str(shared_key).encode("utf-8"), encrypted_witnesses[self.my_id])
-        if self.poly_commit.verify_eval(commitments, self.my_id+1, share, witness):
+
+        p = int(pow(self.point.omega, self.my_id))
+        if self.poly_commit.verify_eval(commitments, p, share, witness):
             multicast(HbAVSSMessageType.OK)
         else:
             logger.error("PolyCommit verification failed.")
@@ -108,10 +110,11 @@ class HbAvssLight(HbAvss):
         ephemeral_public_key = pow(self.g, ephemeral_secret_key)
         z = [None]*self.n
         for i in range(self.n):
-            witness = self.poly_commit.create_witness(aux_poly, i+1)
+            p = int(pow(self.point.omega, i))
+            witness = self.poly_commit.create_witness(aux_poly, p)
             shared_key = pow(self.public_keys[i], ephemeral_secret_key)
             z[i] = SymmetricCrypto.encrypt(
-                str(shared_key).encode("utf-8"), (phi(i+1), witness))
+                str(shared_key).encode("utf-8"), (int(phi(p)), int(witness)))
 
         return dumps((commitments, ephemeral_public_key, z))
 

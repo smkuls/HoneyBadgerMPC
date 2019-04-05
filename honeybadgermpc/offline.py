@@ -22,7 +22,7 @@ def get_avss_params(n, t, my_id):
     return g, h, public_keys, private_keys[my_id]
 
 
-max_iterations = 7
+max_iterations = 2
 
 
 class PreProcessingBase(ABC):
@@ -185,29 +185,31 @@ class TripleGenerator(PreProcessingBase):
 
 
 async def get_random(n, t, b, my_id, send, recv):
-    with RandomGenerator(n, t, my_id, send, recv, b) as random_generator:
-        while True:
-            yield await random_generator.get()
-
-
-async def _mpc_prog(context, b, randoms):
     global max_iterations
-    n, i = max_iterations * b * (context.N - context.t), 0
-    logging.info("Waiting for n: %d", n)
+    z, i = max_iterations * b * (n - t), 0
+    logging.info("Waiting for n: %d", z)
+    randoms = [None] * z
     stime = time()
-    vals = []
-    async for rand in randoms:
-        vals.append(rand)
-        i += 1
-        logging.info("[%d] => %s", i, await context.Share(rand).open())
-        if i == n:
-            break
-    await randoms.aclose()
+    with RandomGenerator(n, t, my_id, send, recv, b) as random_generator:
+        for i in range(z):
+            randoms[i] = await random_generator.get()
     total_time = time()-stime
     logging.info("Total time: %s", total_time)
-    logging.info("Batch size: %d, %f per second.", b, n/total_time)
-    # logging.info("Unique values: %d", len(set(vals)))
+    logging.info("Batch size: %d, %f per second.", b, z/total_time)
+    return randoms
+
+
+async def _mpc_prog(context, b, randoms_task):
+    vals = await randoms_task
+    logging.info("TOTAL VALUES COLLECTED: %d", len(vals))
+    tasks = [None]*len(vals)
+    for i, v in enumerate(vals):
+        tasks[i] = context.Share(v).open()
+    logging.info("Individual opens")
+    opened_shares = await asyncio.gather(*tasks)
+    logging.info("Batch opens")
     opened_shares = await context.ShareArray(vals).open()
+    logging.info("Unique values: %d", len(set(vals)))
     logging.info("Unique openings: %d", len(set(opened_shares)))
 
 
@@ -218,10 +220,11 @@ async def _prog(peers, n, t, my_id):
     # pr = cProfile.Profile()
     # pr.enable()
     b = HbmpcConfig.extras["k"]
-    b = 2**8
+    b = 2**10
     async with ProcessProgramRunner(peers, n, t, my_id) as runner:
         send, recv = runner.get_send_recv("rand-gen")
-        runner.execute("mpc-prog", _mpc_prog, b=b, randoms=get_random(n, t, b, my_id, send, recv))
+        randoms_task = asyncio.ensure_future(get_random(n, t, b, my_id, send, recv))
+        runner.execute("mpc-prog", _mpc_prog, b=b, randoms_task=randoms_task)
 
     # pr.disable()
     # s = io.StringIO()

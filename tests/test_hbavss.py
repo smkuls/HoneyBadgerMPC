@@ -1,7 +1,7 @@
 from pytest import mark
 from random import randint
 from contextlib import ExitStack
-from honeybadgermpc.polynomial import polynomials_over
+from honeybadgermpc.polynomial import polynomials_over, EvalPoint
 from honeybadgermpc.betterpairing import G1, ZR
 from honeybadgermpc.hbavss import HbAvssLight, HbAvssBatch
 from honeybadgermpc.mpc import TaskProgramRunner
@@ -18,7 +18,7 @@ def get_avss_params(n, t):
 
 
 @mark.asyncio
-async def test_hbavss_light(test_router):
+async def test_hbavss_light(test_router, galois_field):
     t = 2
     n = 3*t + 1
 
@@ -39,7 +39,9 @@ async def test_hbavss_light(test_router):
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
         shares = await asyncio.gather(*avss_tasks)
 
-    assert polynomials_over(ZR).interpolate_at(zip(range(1, n+1), shares)) == value
+    point = EvalPoint(galois_field, n, True)
+    points = [int(pow(point.omega, i)) for i in range(n)]
+    assert polynomials_over(ZR).interpolate_at(zip(points, shares)) == value
 
 
 @mark.asyncio
@@ -76,7 +78,7 @@ async def test_hbavss_batch(test_router):
 
 
 @mark.asyncio
-async def test_hbavss_light_client_mode(test_router):
+async def test_hbavss_light_client_mode(test_router, galois_field):
     t = 2
     n = 3*t + 1
 
@@ -102,12 +104,14 @@ async def test_hbavss_light_client_mode(test_router):
         # Ignore the result from the dealer
         shares = (await asyncio.gather(*avss_tasks))[:-1]
 
-    assert polynomials_over(ZR).interpolate_at(zip(range(1, n+1), shares)) == value
+    point = EvalPoint(galois_field, n, True)
+    points = [int(pow(point.omega, i)) for i in range(n)]
+    assert polynomials_over(ZR).interpolate_at(zip(points, shares)) == value
 
 
 @mark.asyncio
 async def test_hbavss_light_share_open(test_router):
-    t = 2
+    t = 1
     n = 3*t + 1
 
     g, h, pks, sks = get_avss_params(n, t)
@@ -129,7 +133,8 @@ async def test_hbavss_light_share_open(test_router):
 
     async def _prog(context):
         share_value = context.field(shares[context.myid])
-        assert await context.Share(share_value).open() == value
+        opened_value = await context.Share(share_value).open()
+        assert opened_value == value
 
     program_runner = TaskProgramRunner(n, t)
     program_runner.add(_prog)
@@ -161,6 +166,7 @@ async def test_hbavss_light_parallel_share_array_open(test_router):
 
     async def _prog(context):
         share_values = list(map(context.field, shares[context.myid]))
+        print("#"*100, share_values)
         opened_shares = set(await context.ShareArray(share_values).open())
         # The set of opened share should have exactly `k` values
         assert len(opened_shares) == k
