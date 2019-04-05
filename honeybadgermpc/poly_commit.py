@@ -19,7 +19,9 @@ class PolyCommit(object):
 
     def verify_eval(self, cs, i, phi_at_i, witness):
         lhs = G1.one()
+        k = 1
         for j in range(len(cs)):
-            lhs *= pow(cs[j], pow(i, j))
+            lhs *= pow(cs[j], k)
+            k *= i
         rhs = pow(self.g, phi_at_i) * pow(self.h, witness)
         return lhs == rhs

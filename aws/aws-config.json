@@ -1,36 +1,32 @@
 {
-    "mpc" : {
-        "command": "python -m honeybadgermpc.ipc",
+    "mpc": {
+        "command": "python -O -m honeybadgermpc.offline",
         "t": 1,
         "n": 4,
-        "k": 8,
+        "k": 16,
         "num_faulty_nodes": 0,
         "num_triples": 1000,
         "port": 7000
     },
-
-    "aws":{
+    "aws": {
         "setup_file_path": "./aws/setup.sh",
-
-        "region":{
+        "region": {
             "us-east-1": {
                 "vm_count": 4,
-                "security_group_ids": ["sg-0faaf975"],
+                "security_group_ids": [
+                    "sg-0faaf975"
+                ],
                 "image_id": "ami-0ac019f4fcb7cb7e6",
                 "key_file_path": "./aws/us-east1.pem",
-                "key_name": "us-east1"
+                "key_name": "samarth-us-east1"
             }
         },
-
-        "vm_name": "honeybadgermpc-vms",
-
-        "instance_type": "t2.micro",
+        "vm_name": "honeybadgermpc-auto-vms",
+        "instance_type": "c5.xlarge",
         "instance_user_name": "ubuntu",
-
         "bucket_name": "honeybadgermpc"
     },
-
     "docker": {
-        "image_path": "dsluiuc/honeybadgermpc:latest"
+        "image_path": "dsluiuc/honeybadgermpc-docker:latest"
     }
 }

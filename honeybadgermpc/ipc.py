@@ -101,7 +101,7 @@ class NodeCommunicator(object):
             if msg is NodeCommunicator.STOP:
                 logging.debug("No more messages to Node: %d can be sent.", node_id)
                 break
-            raw_msg = dumps(msg)
+            raw_msg = msg if isinstance(msg, bytes) else dumps(msg)
             self.bytes_sent += len(raw_msg)
             # logging.debug("[SEND] TO: %d, MSG: %s", node_id, msg)
             await send_to_node([raw_msg])

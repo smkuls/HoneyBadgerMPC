@@ -7,7 +7,7 @@ from aws.AWSConfig import AwsConfig
 
 
 class EC2Manager:
-    current_vms_file_name = "current.vms"
+    current_vms_file_name = "conf/current.vms"
 
     def __init__(self):
         self.ec2Resources = {
@@ -128,7 +128,6 @@ class EC2Manager:
         ssh_client = paramiko.SSHClient()
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ip = self.get_instance_public_ip(instance_id)
-
         try:
             ssh_client.connect(
                     hostname=ip,

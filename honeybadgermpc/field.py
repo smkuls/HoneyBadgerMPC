@@ -118,7 +118,7 @@ class GF(object):
     def __reduce__(self):
         return (GF, (self.modulus,))
 
-    def random(self):
+    def random(self, seed=None):
         return GFElement(randint(0, self.modulus-1), self)
 
 

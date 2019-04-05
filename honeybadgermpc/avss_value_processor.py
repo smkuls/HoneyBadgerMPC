@@ -14,9 +14,6 @@ logger.setLevel(logging.NOTSET)
 
 
 class AvssValueProcessor(object):
-    # How long to wait before running another instance of ACS?
-    ACS_PERIOD_IN_SECONDS = 1
-
     # Delimiter to separate two batches in the output queue.
     BATCH_DELIMITER = None
 
@@ -89,29 +86,21 @@ class AvssValueProcessor(object):
             while self.sequencers[dealer_id].is_next_available():
                 _, avss_values = self.sequencers[dealer_id].get()
 
-                for avss_value in avss_values:
-                    # Add the value to the input list based on who dealt the value
-                    self.inputs_per_dealer[dealer_id].append(avss_value)
+                # Add the value to the input list based on who dealt the value
+                self.inputs_per_dealer[dealer_id].append(avss_values)
 
-                    # If this value has already been agreed upon by other parties
-                    # then it means that its Future has been added to the output
-                    # list. So we need to set the result of that future to be equal
-                    # to this value.
-                    idx = len(self.inputs_per_dealer[dealer_id])-1
-                    if idx < len(self.outputs_per_dealer[dealer_id]):
-                        assert not self.outputs_per_dealer[dealer_id][idx].done()
-                        self.outputs_per_dealer[dealer_id][idx].set_result(avss_value)
+                # If this value has already been agreed upon by other parties
+                # then it means that its Future has been added to the output
+                # list. So we need to set the result of that future to be equal
+                # to this value.
+                idx = len(self.inputs_per_dealer[dealer_id])-1
+                if idx < len(self.outputs_per_dealer[dealer_id]):
+                    assert not self.outputs_per_dealer[dealer_id][idx].done()
+                    self.outputs_per_dealer[dealer_id][idx].set_result(avss_values)
 
-    async def _acs_runner(self):
-        logger.debug("[%d] Starting ACS runner", self.my_id)
-        acs_counter = 0
-        while True:
-            # Sleep first, then run so that you wait until some values are received
-            await asyncio.sleep(AvssValueProcessor.ACS_PERIOD_IN_SECONDS)
-            sid = f"AVSS-ACS-{acs_counter}"
-            logger.debug("[%d] ACS Id: %s", self.my_id, sid)
-            await self._run_acs_to_process_values(sid)
-            acs_counter += 1
+    async def run_acs(self, acs_id):
+        logger.debug("[%d] Starting ACS: %s", self.my_id, acs_id)
+        await self._run_acs_to_process_values(f"AVSS-ACS-{acs_id}")
 
     def _process_acs_output(self, pickled_acs_outputs):
         # Do a transpose of the AVSS counts from each party.
@@ -226,6 +215,8 @@ class AvssValueProcessor(object):
                         self.next_idx_to_return_per_dealer[j] += 1
             self.output_queue.put_nowait(AvssValueProcessor.BATCH_DELIMITER)
 
+        logger.debug("[%d] Added to output queue.", self.my_id)
+
     async def _run_acs_to_process_values(self, sid):
         # Get a count of all values which have been received
         # until now from all the other participating nodes.
@@ -257,7 +248,6 @@ class AvssValueProcessor(object):
 
     def __enter__(self):
         self.tasks.append(asyncio.create_task(self._recv_loop()))
-        self.tasks.append(asyncio.create_task(self._acs_runner()))
         return self
 
     def __exit__(self, type, value, traceback):

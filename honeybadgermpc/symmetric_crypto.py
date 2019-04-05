@@ -1,7 +1,6 @@
 from Crypto.Cipher import AES
 from Crypto import Random
 from hashlib import sha256
-from pickle import dumps, loads
 
 
 class SymmetricCrypto(object):
@@ -30,7 +29,8 @@ class SymmetricCrypto(object):
         assert len(key) == 32
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(key, AES.MODE_CBC, iv)
-        ciphertext = (iv + cipher.encrypt(SymmetricCrypto.pad(dumps(plaintext))))
+        ciphertext = (iv + cipher.encrypt(
+            SymmetricCrypto.pad(serialize_tuple(plaintext))))
         return ciphertext
 
     @staticmethod
@@ -40,5 +40,20 @@ class SymmetricCrypto(object):
         assert len(key) == 32
         iv = ciphertext[:16]
         cipher = AES.new(key, AES.MODE_CBC, iv)
-        plaintext = loads(SymmetricCrypto.unpad(cipher.decrypt(ciphertext[16:])))
+        plaintext = deserialize_tuple(
+            SymmetricCrypto.unpad(cipher.decrypt(ciphertext[16:])))
         return plaintext
+
+
+def serialize_tuple(value):
+    assert type(value) is tuple
+    assert len(value) == 2
+    assert type(value[0]) is int
+    assert type(value[1]) is int
+    return (str(value[0]) + "," + str(value[1])).encode()
+
+
+def deserialize_tuple(value):
+    s = value.decode()
+    values = s.split(",")
+    return (int(values[0]), int(values[1]))

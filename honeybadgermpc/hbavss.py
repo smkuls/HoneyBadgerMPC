@@ -1,6 +1,9 @@
 import logging
 import asyncio
 from pickle import dumps, loads
+from time import time
+from psutil import cpu_count
+from concurrent.futures import ThreadPoolExecutor
 from honeybadgermpc.field import GF
 from honeybadgermpc.elliptic_curve import Subgroup
 from honeybadgermpc.betterpairing import ZR
@@ -11,7 +14,6 @@ from honeybadgermpc.symmetric_crypto import SymmetricCrypto
 from honeybadgermpc.exceptions import HoneyBadgerMPCError
 from honeybadgermpc.protocols.reliablebroadcast import reliablebroadcast
 
-
 # TODO: Move these to a separate file instead of using it from batch_reconstruction.py
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 
@@ -19,7 +21,7 @@ from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 # Uncomment this when you want logs from this file.
-# logger.setLevel(logging.NOTSET)
+logger.setLevel(logging.NOTSET)
 
 
 class HbAVSSMessageType:
@@ -54,11 +56,14 @@ class HbAvss(object):
         # Initialize this at once to ensure that all nodes get the same omega.
         self.point = EvalPoint(GF.get(Subgroup.BLS12_381), self.n, True)
         self.poly = polynomials_over(self.field)
+        self.executor = ThreadPoolExecutor(max_workers=cpu_count())
 
     def __enter__(self):
+        self.executor.__enter__()
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, *args):
+        self.executor.__exit__(*args)
         self.subscribe_recv_task.cancel()
 
 
@@ -78,7 +83,7 @@ class HbAvssLight(HbAvss):
         if self.poly_commit.verify_eval(commitments, self.my_id+1, share, witness):
             multicast(HbAVSSMessageType.OK)
         else:
-            logging.error("PolyCommit verification failed.")
+            logger.error("PolyCommit verification failed.")
             raise HoneyBadgerMPCError("PolyCommit verification failed.")
 
         # to handle the case that a (malicious) node sends
@@ -208,32 +213,37 @@ class HbAvssBatch(HbAvss):
             for i in range(self.n):
                 send(i, msg)
 
-        commitments, ephemeral_public_key, encrypted_witnesses = loads(
-            dispersal_msg)
+        stime = time()
+        commitments, ephemeral_public_key, encrypted_witnesses = loads(dispersal_msg)
         batch_size = len(commitments)
 
         # all_encrypted_witnesses: n
         shared_key = pow(ephemeral_public_key, self.private_key)
+        encoded_shared_key = str(shared_key).encode("utf-8")
 
         shares = [None] * batch_size
         witnesses = [None] * batch_size
         # Decrypt
-        for k in range(batch_size):
-            shares[k], witnesses[k] = SymmetricCrypto.decrypt(
-                str(shared_key).encode("utf-8"),
-                encrypted_witnesses[self.my_id * batch_size + k])
+        decrypt_args = [(encoded_shared_key, encrypted_witnesses[
+            self.my_id * batch_size + k]) for k in range(batch_size)]
+        verify_args = [None] * batch_size
+        verification_point = int(pow(self.point.omega, self.my_id))
+        for k, decrypted_msg in enumerate(self.executor.map(
+                                          SymmetricCrypto.decrypt, *zip(*decrypt_args))):
+            shares[k], witnesses[k] = decrypted_msg[0], decrypted_msg[1]
+            verify_args[k] = (
+                commitments[k], verification_point, shares[k], witnesses[k])
 
         # verify & send all ok
-        verification_point = int(pow(self.point.omega, self.my_id))
-        for k in range(batch_size):
-            verified = self.poly_commit.verify_eval(
-                commitments[k], verification_point, shares[k], witnesses[k])
+        for verified in self.executor.map(self.poly_commit.verify_eval,
+                                          *zip(*verify_args)):
             if not verified:
                 # will be replaced by sending out IMPLICATE message later
                 # multicast(HbAVSSMessageType.IMPLICATE)
-                logging.error("PolyCommit verification failed.")
+                logger.error("PolyCommit verification failed.")
                 raise HoneyBadgerMPCError("PolyCommit verification failed.")
 
+        logger.info("Verification time: %s", time()-stime)
         multicast(HbAVSSMessageType.OK)
 
         # Bracha-style agreement
@@ -263,17 +273,27 @@ class HbAvssBatch(HbAvss):
         return shares
 
     def _get_dealer_msg(self, values):
-        # Sample a random degree-(t,t) bivariate polynomial φ(·,·)
-        # such that each φ(0,k) = sk and φ(i,k) is Pi’s share of sk
+        stime = time()
+
         batch_size = len(values)
         phi = [None] * batch_size
         commitments = [None] * batch_size
         aux_poly = [None] * batch_size
+        witness_fft_args = [None] * batch_size
+        shares_fft_args = [None] * batch_size
+        omega, modulus = int(self.point.omega), self.point.field.modulus
+        order = self.point.order
+
+        # Sample a random degree-(t,t) bivariate polynomial φ(·,·)
+        # such that each φ(0,k) = sk and φ(i,k) is Pi’s share of sk
+        phi = [self.poly.random(self.t, values[k]) for k in range(batch_size)]
+
         # for k ∈ [t+1]
         #   Ck, auxk <- PolyCommit(SP,φ(·,k))
-        for k in range(batch_size):
-            phi[k] = self.poly.random(self.t, values[k])
-            commitments[k], aux_poly[k] = self.poly_commit.commit(phi[k])
+        for k, (c, aux) in enumerate(self.executor.map(self.poly_commit.commit, phi)):
+            commitments[k], aux_poly[k] = c, aux
+            witness_fft_args[k] = list(map(int, aux_poly[k])), omega, modulus, order
+            shares_fft_args[k] = list(map(int, phi[k])), omega, modulus, order
 
         ephemeral_secret_key = self.field.random()
         ephemeral_public_key = pow(self.g, ephemeral_secret_key)
@@ -281,26 +301,26 @@ class HbAvssBatch(HbAvss):
         # for each party Pi and each k ∈ [t+1]
         #   1. w[i][k] <- CreateWitnesss(Ck,auxk,i)
         #   2. z[i][k] <- EncPKi(φ(i,k), w[i][k])
-        z = [None] * self.n * batch_size
         witnesses = [None] * batch_size
-        evaluations = [None] * batch_size
+        shares = [None] * batch_size
+        witnesses_fft_results = self.executor.map(fft, *zip(*witness_fft_args))
+        shares_fft_results = self.executor.map(fft, *zip(*shares_fft_args))
+        iterator = zip(witnesses_fft_results, shares_fft_results)
+        for k, (witness_fft_result, share_fft_result) in enumerate(iterator):
+            witnesses[k] = witness_fft_result[:self.n]
+            shares[k] = share_fft_result[:self.n]
 
-        omega, modulus = int(self.point.omega), self.point.field.modulus
-        order = self.point.order
-        def get_coeffs(poly): return list(map(int, poly.coeffs))
-
-        for k in range(batch_size):
-            witnesses[k] = fft(get_coeffs(aux_poly[k]), omega, modulus, order)[:self.n]
-            evaluations[k] = fft(get_coeffs(phi[k]), omega, modulus, order)[:self.n]
-
+        encrypt_args = [None] * self.n * batch_size
         for i in range(self.n):
             shared_key = pow(self.public_keys[i], ephemeral_secret_key)
             for k in range(batch_size):
-                z[i * batch_size + k] = SymmetricCrypto.encrypt(
-                    str(shared_key).encode("utf-8"), (
-                        evaluations[k][i], witnesses[k][i]))
+                encrypt_args[i*batch_size + k] = (
+                    str(shared_key).encode("utf-8"), (shares[k][i], witnesses[k][i]))
 
-        return dumps((commitments, ephemeral_public_key, z))
+        z = list(self.executor.map(SymmetricCrypto.encrypt, *zip(*encrypt_args)))
+        serialized_msg = dumps((commitments, ephemeral_public_key, z))
+        logger.info("Dealer time: %s", time()-stime)
+        return serialized_msg
 
     async def avss(self, avss_id, values=None, dealer_id=None, client_mode=False):
         """

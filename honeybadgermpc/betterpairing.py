@@ -1,6 +1,7 @@
 ﻿from pypairing import PyFq, PyFq2, PyFq12, PyFqRepr, PyG1, PyG2, PyFr
 import random
 import re
+from inspect import getframeinfo, stack
 
 # Order of BLS group
 bls12_381_r = 52435875175126190479447740508185965837690552500527637822603658699938581184513  # (# noqa: E501)
@@ -51,9 +52,12 @@ class G1:
             self.pyg1 = other
 
     def __str__(self):
-        x = int(self.pyg1.__str__()[4:102], 0)
-        y = int(self.pyg1.__str__()[108:206], 0)
-        return "(" + str(x) + ", " + str(y) + ")"
+        return self.pyg1.__str__()
+        # caller = getframeinfo(stack()[1][0])
+        # print("%s:%d" % (caller.filename, caller.lineno))
+        # x = int(self.pyg1.__str__()[4:102], 0)
+        # y = int(self.pyg1.__str__()[108:206], 0)
+        # return "(" + str(x) + ", " + str(y) + ")"
 
     def __repr__(self):
         return str(self)
@@ -470,25 +474,26 @@ class GT:
 
 
 class ZR:
-    def __init__(self, val=None):
+    def __init__(self, val):
         self.pp = []
-        if val is None:
-            self.val = PyFr(0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654)
-        elif type(val) is int:
-            self.val = PyFr(str(abs(val)))
-            if val < 0:
-                self.val.negate()
-        elif type(val) is str:
-            if val[1] == 'x':
-                self.val = PyFr(val)
-            elif int(val) < 0:
-                intval = int(val) * -1
-                self.val = PyFr(str(intval))
-                self.val.negate()
-            else:
-                self.val = PyFr(val)
-        elif type(val) is PyFr:
-            self.val = val
+        # if val is None:
+        #     self.val = PyFr(0x5dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654)
+        # elif type(val) is int:
+        # assert type(val) is int
+        self.val = PyFr(str(abs(val)))
+        if val < 0:
+            self.val.negate()
+        # elif type(val) is str:
+        #     if val[1] == 'x':
+        #         self.val = PyFr(val)
+        #     elif int(val) < 0:
+        #         intval = int(val) * -1
+        #         self.val = PyFr(str(intval))
+        #         self.val.negate()
+        #     else:
+        #         self.val = PyFr(val)
+        # elif type(val) is PyFr:
+        #     self.val = val
 
     def __str__(self):
         hexstr = self.val.__str__()[3:-1]
@@ -700,12 +705,12 @@ class ZR:
     def random(seed=None):
         r = bls12_381_r
         if seed is None:
-            r = random.SystemRandom().randint(0, r-1)
-            return ZR(str(r))
+            r = random.randint(0, r-1)
+            return ZR(r)
         else:
             # Generate pseudorandomly based on seed
             r = random.Random(seed).randint(0, r-1)
-            return ZR(str(r))
+            return ZR(r)
 
     @staticmethod
     def zero():

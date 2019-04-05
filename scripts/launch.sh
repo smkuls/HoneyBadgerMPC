@@ -26,7 +26,7 @@ MODULE_PATH=${DOT_SEPARATED_PATH::-3}
 
 CONFIG_PATH=$2
 
-CMD="python -m ${MODULE_PATH}"
+CMD="python -O -m ${MODULE_PATH}"
 echo ">>> Command to be executed: '${CMD}'"
 
 set -x

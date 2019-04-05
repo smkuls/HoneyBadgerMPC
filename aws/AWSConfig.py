@@ -27,7 +27,7 @@ def read_environment_variable(key):
     try:
         value = os.environ[key]
     except KeyError:
-        print(f">>> {key} environment variable not set.")
+        print(f">>> {key} environment variable not set. Run `export {key}=<value>`")
         sys.exit(1)
     return value
 

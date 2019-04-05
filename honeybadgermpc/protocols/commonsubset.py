@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from time import time
 
 
 async def commonsubset(pid, n, f, rbc_out, aba_in, aba_out):
@@ -131,6 +132,8 @@ async def make_commonsubset(sid, pid, n, f, pk, sk, input_msg, send, recv, bcast
 
 
 async def run_common_subset(sid, pbk, pvk, n, f, nodeid, send, recv, value):
+    stime = time()
+
     def mcast(o):
         for i in range(n):
             send(i, o)
@@ -147,6 +150,7 @@ async def run_common_subset(sid, pbk, pvk, n, f, nodeid, send, recv, value):
     for task in recv_tasks:
         task.cancel()
 
+    logging.info("Total ACS time: %s", time()-stime)
     return acs_output
 
 

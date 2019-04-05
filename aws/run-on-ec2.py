@@ -46,6 +46,8 @@ def run_commands_on_instances(
         verbose=True,
         output_file_prefix=None,
         ):
+    if len(commands_per_instance_list) == 0:
+        return
 
     args = [(instance_id, commands, verbose, output_file_prefix)
             for instance_id, commands in commands_per_instance_list]
@@ -223,9 +225,12 @@ def trigger_run(run_id, skip_setup, max_k, only_setup, cleanup):
                 max_k, s3manager, instance_ids)
         elif AwsConfig.MPC_CONFIG.COMMAND.endswith("batch_opening"):
             setup_commands = get_batchopening_setup_commands(s3manager, instance_ids)
+        elif AwsConfig.MPC_CONFIG.COMMAND.endswith("offline"):
+            setup_commands = []
 
     logging.info("Waiting for VMs to boot up.")
     instance_ids, instance_ips = ec2manager.wait_to_boot_up(result)
+    logging.info("IPs: [%s]", instance_ips)
 
     port = AwsConfig.MPC_CONFIG.PORT
 
@@ -242,12 +247,9 @@ def trigger_run(run_id, skip_setup, max_k, only_setup, cleanup):
     elif AwsConfig.MPC_CONFIG.COMMAND.endswith("batch_opening"):
         instance_configs = get_instance_configs(
             instance_ips, {"k": AwsConfig.MPC_CONFIG.K, "linger_timeout_in_seconds": 10})
-    elif AwsConfig.MPC_CONFIG.COMMAND.endswith("secretshare_hbavsslight"):
+    elif AwsConfig.MPC_CONFIG.COMMAND.endswith("offline"):
         instance_configs = get_instance_configs(
-            instance_ips, {"k": AwsConfig.MPC_CONFIG.K})
-    elif AwsConfig.MPC_CONFIG.COMMAND.endswith("batch_opening"):
-        instance_configs = get_instance_configs(
-            instance_ips, {"k": AwsConfig.MPC_CONFIG.K})
+            instance_ips, {"linger_timeout_in_seconds": 10})
     else:
         logging.error("Application not supported to run on AWS.")
         raise SystemError
@@ -280,13 +282,15 @@ def trigger_run(run_id, skip_setup, max_k, only_setup, cleanup):
                 {AwsConfig.DOCKER_IMAGE_PATH} \
                 {AwsConfig.MPC_CONFIG.COMMAND} -d -f config/config-{i}.json"
             ]] for i, instance_id in enumerate(instance_ids)]
+        for _, command in instance_commands:
+            print(' '.join(command[0].split()))
         logging.info("Triggering MPC commands.")
         run_commands_on_instances(ec2manager, instance_commands)
-        logging.info("Collecting logs.")
-        log_collection_cmds = [[id, ["cat benchmark-logs/*.log"]] for id in instance_ids]
-        os.makedirs(run_id, exist_ok=True)
-        run_commands_on_instances(
-            ec2manager, log_collection_cmds, True, f"{run_id}/benchmark-logs")
+        # logging.info("Collecting logs.")
+        # log_collection_cmds = [[id, ["cat benchmark-logs/*.log"]] for id in instance_ids]
+        # os.makedirs(run_id, exist_ok=True)
+        # run_commands_on_instances(
+        #     ec2manager, log_collection_cmds, True, f"{run_id}/benchmark-logs")
 
     s3manager.cleanup()
 
