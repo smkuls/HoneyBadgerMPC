@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from honeybadgermpc.hbavss import HbAvssLight
+from honeybadgermpc.hbavss import HbAvssBatch
 from honeybadgermpc.avss_value_processor import AvssValueProcessor
 from honeybadgermpc.protocols.crypto.boldyreva import dealer
 from honeybadgermpc.betterpairing import G1, ZR
@@ -22,11 +22,9 @@ def get_avss_params(n, t, my_id):
 
 
 class PreProcessingBase(ABC):
-    def __init__(self, n, t, my_id, send, recv, tag,
-                 batch_size, avss_value_processor_chunk_size, max_iterations):
+    def __init__(self, n, t, my_id, send, recv, tag, batch_size, max_iterations):
         self.n, self.t, self.my_id = n, t, my_id
         self.tag = tag
-        self.avss_value_processor_chunk_size = avss_value_processor_chunk_size
 
         # Batch size of values to AVSS from a node
         self.batch_size = batch_size
@@ -52,15 +50,13 @@ class PreProcessingBase(ABC):
     async def _trigger_and_wait_for_avss(self, avss_id):
         inputs = self._get_input_batch()
         assert type(inputs) in [tuple, list]
-        avss_tasks = []
-        avss_tasks.append(asyncio.create_task(
-            self.avss_instance.avss_parallel(
-                avss_id, len(inputs), values=inputs, dealer_id=self.my_id)))
+        avss_tasks = [None]*self.n
+        avss_tasks[self.my_id] = asyncio.create_task(
+            self.avss_instance.avss(avss_id, values=inputs, dealer_id=self.my_id))
         for i in range(self.n):
             if i != self.my_id:
-                avss_tasks.append(asyncio.create_task(
-                    self.avss_instance.avss_parallel(
-                        avss_id, len(inputs), dealer_id=i)))
+                avss_tasks[i] = asyncio.create_task(
+                    self.avss_instance.avss(avss_id, dealer_id=i))
         await asyncio.gather(*avss_tasks)
 
     async def _runner(self):
@@ -72,16 +68,16 @@ class PreProcessingBase(ABC):
             await self.avss_value_processor.run_acs(i)
             logging.debug("[%d] ACS Completed. id: %d", self.my_id, i)
 
-    async def _get_output_batch(self, group_size=1):
+    async def _get_output_batch(self):
         for i in range(self.batch_size):
             batch = []
             while True:
-                value = await self.avss_value_processor.get()
-                if value is None:
+                values = await self.avss_value_processor.get()
+                if values is None:
                     break
-                batch.append(value)
-            assert len(batch) / group_size >= self.n - self.t
-            assert len(batch) / group_size <= self.n
+                batch.append(values)
+            assert len(batch) >= self.n - self.t
+            assert len(batch) <= self.n
             yield batch
 
     async def _extract(self):
@@ -91,7 +87,7 @@ class PreProcessingBase(ABC):
         n, t, my_id = self.n, self.t, self.my_id
         send, recv = self.get_send_recv(f'{self.tag}-AVSS')
         g, h, pks, sk = get_avss_params(n, t, my_id)
-        self.avss_instance = HbAvssLight(pks, sk, g, h, n, t, my_id, send, recv)
+        self.avss_instance = HbAvssBatch(pks, sk, g, h, n, t, my_id, send, recv)
         self.avss_instance.__enter__()
         self.tasks.append(create_background_task(self._runner()))
 
@@ -101,8 +97,7 @@ class PreProcessingBase(ABC):
             pk, sks[my_id],
             n, t, my_id,
             send, recv,
-            self.avss_instance.output_queue.get,
-            self.avss_value_processor_chunk_size)
+            self.avss_instance.output_queue.get)
         self.avss_value_processor.__enter__()
         self.tasks.append(create_background_task(self._extract()))
         return self
@@ -117,7 +112,7 @@ class PreProcessingBase(ABC):
 class RandomGenerator(PreProcessingBase):
     def __init__(self, n, t, my_id, send, recv, batch_size=16, max_iterations=10):
         super(RandomGenerator, self).__init__(
-            n, t, my_id, send, recv, "rand", batch_size, 1, max_iterations)
+            n, t, my_id, send, recv, "rand", batch_size, max_iterations)
         self.field = GF(Subgroup.BLS12_381)
 
     def _get_input_batch(self):
@@ -125,18 +120,19 @@ class RandomGenerator(PreProcessingBase):
 
     async def _extract(self):
         while True:
-            async for batch in self._get_output_batch():
-                random_shares_int = await asyncio.gather(*batch)
-                output_shares_int = refine_randoms(
-                    self.n, self.t, self.field, random_shares_int)
-                for value in output_shares_int:
-                    self.output_queue.put_nowait(self.field(value))
+            async for futures_list_per_party in self._get_output_batch():
+                shares_list_per_party = await asyncio.gather(*futures_list_per_party)
+                for all_party_shares in zip(*shares_list_per_party):
+                    refined_shares = refine_randoms(
+                        self.n, self.t, self.field, list(all_party_shares))
+                    for share in refined_shares:
+                        self.output_queue.put_nowait(share)
 
 
 class TripleGenerator(PreProcessingBase):
     def __init__(self, n, t, my_id, send, recv, batch_size=16, max_iterations=10):
         super(TripleGenerator, self).__init__(
-            n, t, my_id, send, recv, "triple", batch_size, 3, max_iterations)
+            n, t, my_id, send, recv, "triple", batch_size, max_iterations)
         self.field = GF(Subgroup.BLS12_381)
 
     def _get_input_batch(self):
@@ -149,15 +145,13 @@ class TripleGenerator(PreProcessingBase):
 
     async def _extract(self):
         while True:
-            async for batch in self._get_output_batch(3):
-                triple_shares_int = await asyncio.gather(*batch)
-                # Number of nodes which have contributed values to this batch
-                n = len(triple_shares_int)
-                assert n % 3 == 0
-
-                for i in range(0, n, 3):
-                    a, b, ab = triple_shares_int[i:i+3]
-                    self.output_queue.put_nowait((a, b, ab))
+            async for futures_list_per_party in self._get_output_batch():
+                shares_list_per_party = await asyncio.gather(*futures_list_per_party)
+                assert (all(len(i) == 3*self.batch_size) for i in shares_list_per_party)
+                for j in range(0, self.batch_size*3, 3):
+                    for i in range(len(shares_list_per_party)):
+                        a, b, ab = shares_list_per_party[i][j:j+3]
+                        self.output_queue.put_nowait((int(a), int(b), int(ab)))
 
 
 async def get_random(n, t, my_id, send, recv):

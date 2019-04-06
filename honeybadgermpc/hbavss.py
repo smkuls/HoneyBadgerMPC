@@ -270,6 +270,8 @@ class HbAvssBatch(HbAvss):
             if avss_msg == HbAVSSMessageType.READY and sender not in ready_set:
                 ready_set.add(sender)
 
+        self.output_queue.put_nowait((dealer_id, avss_id, shares))
+
         return shares
 
     def _get_dealer_msg(self, values):
