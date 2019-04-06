@@ -19,6 +19,7 @@ async def test_avss_value_processor_with_diff_inputs(test_router):
     ]
 
     get_tasks = [None]*n
+    acs_tasks = [None]*n
     pk, sks = dealer(n, t+1)
     avss_value_procs = [None]*n
     input_qs = [None]*n
@@ -32,7 +33,9 @@ async def test_avss_value_processor_with_diff_inputs(test_router):
                 pk, sks[i], n, t, i, sends[i], recvs[i], input_qs[i].get)
             stack.enter_context(avss_value_procs[i])
             get_tasks[i] = asyncio.create_task(avss_value_procs[i].get())
+            acs_tasks[i] = asyncio.create_task(avss_value_procs[i].run_acs(0))
 
+        await asyncio.gather(*acs_tasks)
         futures = await asyncio.gather(*get_tasks)
         for i, future in enumerate(futures):
             assert type(future) is asyncio.Future

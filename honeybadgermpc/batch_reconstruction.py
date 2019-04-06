@@ -9,6 +9,7 @@ import time
 from .reed_solomon import Algorithm, EncoderFactory, DecoderFactory, RobustDecoderFactory
 from .reed_solomon import IncrementalDecoder
 from honeybadgermpc.asyncio_wrapper import create_background_task
+from honeybadgermpc.exceptions import HoneyBadgerMPCError
 import random
 
 
@@ -34,7 +35,8 @@ def subscribe_recv(recv):
     def subscribe(tag):
         # take everything from the queue
         # further things sent directly
-        assert tag not in taken
+        if tag in taken:
+            raise HoneyBadgerMPCError("Tag: %s already taken", tag)
         taken.add(tag)
         return tag_table[tag].get
 

@@ -48,10 +48,7 @@ async def test_get_randoms(test_router, rust_field, n, t, b):
         random_generators = [None]*n
         tasks = [None]*n*b
         for i in range(n):
-            # k => each node has a different batch size
-            # for the number of values which it AVSSes
-            k = randint(1, 10)
-            random_generators[i] = RandomGenerator(n, t, i, sends[i], recvs[i], k)
+            random_generators[i] = RandomGenerator(n, t, i, sends[i], recvs[i])
             stack.enter_context(random_generators[i])
             for j in range(b):
                 tasks[b*i+j] = asyncio.create_task(random_generators[i].get())
@@ -116,10 +113,7 @@ async def test_get_triples(test_router, rust_field, n, t, b):
         triple_generators = [None]*n
         tasks = [None]*n*b
         for i in range(n):
-            # k => each node has a different batch size
-            # for the number of values which it AVSSes
-            k = randint(50, 100)
-            triple_generators[i] = TripleGenerator(n, t, i, sends[i], recvs[i], k)
+            triple_generators[i] = TripleGenerator(n, t, i, sends[i], recvs[i])
             stack.enter_context(triple_generators[i])
             for j in range(b):
                 tasks[b*i+j] = asyncio.create_task(triple_generators[i].get())

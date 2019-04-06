@@ -22,24 +22,21 @@ def get_avss_params(n, t, my_id):
 
 
 class PreProcessingBase(ABC):
-    PERIOD_IN_SECONDS = 3
-
     def __init__(self, n, t, my_id, send, recv, tag,
-                 batch_size=10, avss_value_processor_chunk_size=1):
+                 batch_size, avss_value_processor_chunk_size, max_iterations):
         self.n, self.t, self.my_id = n, t, my_id
         self.tag = tag
         self.avss_value_processor_chunk_size = avss_value_processor_chunk_size
 
         # Batch size of values to AVSS from a node
         self.batch_size = batch_size
-        # Minimum number of values before triggering another set of AVSSes
-        self.low_watermark = self.batch_size
 
         self.output_queue = asyncio.Queue()
 
         # Create a mechanism to split the `send` and `recv` channels based on `tag`
         subscribe_recv_task, subscribe = subscribe_recv(recv)
         self.tasks = [subscribe_recv_task]
+        self.max_iterations = max_iterations
 
         def _get_send_recv(tag):
             return wrap_send(tag, send), subscribe(tag)
@@ -67,18 +64,13 @@ class PreProcessingBase(ABC):
         await asyncio.gather(*avss_tasks)
 
     async def _runner(self):
-        counter = 0
         logging.debug("[%d] Starting preprocessing runner: %s", self.my_id, self.tag)
-        while True:
-            # If the number of values in the output queue are below the lower
-            # watermark then we want to trigger the next set of AVSSes.
-            if self.output_queue.qsize() < self.low_watermark:
-                logging.debug("[%d] Starting AVSS Batch: %d", self.my_id, counter)
-                await self._trigger_and_wait_for_avss(counter)
-                logging.debug("[%d] AVSS Batch Completed: %d", self.my_id, counter)
-                counter += 1
-            # Wait for sometime before checking again.
-            await asyncio.sleep(PreProcessingBase.PERIOD_IN_SECONDS)
+        for i in range(self.max_iterations):
+            logging.debug("[%d] Start AVSS. id: %d", self.my_id, i)
+            await self._trigger_and_wait_for_avss(i)
+            logging.debug("[%d] AVSS Completed. Start ACS. id: %d", self.my_id, i)
+            await self.avss_value_processor.run_acs(i)
+            logging.debug("[%d] ACS Completed. id: %d", self.my_id, i)
 
     async def _get_output_batch(self, group_size=1):
         for i in range(self.batch_size):
@@ -123,9 +115,9 @@ class PreProcessingBase(ABC):
 
 
 class RandomGenerator(PreProcessingBase):
-    def __init__(self, n, t, my_id, send, recv, batch_size=10):
+    def __init__(self, n, t, my_id, send, recv, batch_size=16, max_iterations=10):
         super(RandomGenerator, self).__init__(
-            n, t, my_id, send, recv, "rand", batch_size)
+            n, t, my_id, send, recv, "rand", batch_size, 1, max_iterations)
         self.field = GF(Subgroup.BLS12_381)
 
     def _get_input_batch(self):
@@ -142,10 +134,9 @@ class RandomGenerator(PreProcessingBase):
 
 
 class TripleGenerator(PreProcessingBase):
-    def __init__(self, n, t, my_id, send, recv, batch_size=10):
-        super(TripleGenerator, self).__init__(n, t, my_id, send, recv, "triple",
-                                              batch_size,
-                                              avss_value_processor_chunk_size=3)
+    def __init__(self, n, t, my_id, send, recv, batch_size=16, max_iterations=10):
+        super(TripleGenerator, self).__init__(
+            n, t, my_id, send, recv, "triple", batch_size, 3, max_iterations)
         self.field = GF(Subgroup.BLS12_381)
 
     def _get_input_batch(self):

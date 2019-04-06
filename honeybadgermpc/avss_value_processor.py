@@ -6,12 +6,10 @@ from honeybadgermpc.protocols.commonsubset import run_common_subset
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 from honeybadgermpc.asyncio_wrapper import create_background_task
 from honeybadgermpc.sequencer import Sequencer
+from honeybadgermpc.exceptions import HoneyBadgerMPCError
 
 
 class AvssValueProcessor(object):
-    # How long to wait before running another instance of ACS?
-    ACS_PERIOD_IN_SECONDS = 1
-
     # Delimiter to separate two batches in the output queue.
     BATCH_DELIMITER = None
 
@@ -94,16 +92,10 @@ class AvssValueProcessor(object):
                     assert not self.outputs_per_dealer[dealer_id][idx].done()
                     self.outputs_per_dealer[dealer_id][idx].set_result(avss_value)
 
-    async def _acs_runner(self):
-        logging.debug("[%d] Starting ACS runner", self.my_id)
-        acs_counter = 0
-        while True:
-            # Sleep first, then run so that you wait until some values are received
-            await asyncio.sleep(AvssValueProcessor.ACS_PERIOD_IN_SECONDS)
-            sid = f"AVSS-ACS-{acs_counter}"
-            logging.debug("[%d] ACS Id: %s", self.my_id, sid)
-            await self._run_acs_to_process_values(sid)
-            acs_counter += 1
+    async def run_acs(self, acs_id):
+        sid = f"AVSS-ACS-{acs_id}"
+        logging.debug("[%d] Start ACS. Id: %s", self.my_id, sid)
+        await self._run_acs_to_process_values(sid)
 
     def _process_acs_output(self, pickled_acs_outputs):
         # Do a transpose of the AVSS counts from each party.
@@ -249,7 +241,6 @@ class AvssValueProcessor(object):
 
     def __enter__(self):
         self.tasks.append(create_background_task(self._recv_loop()))
-        self.tasks.append(create_background_task(self._acs_runner()))
         return self
 
     def __exit__(self, type, value, traceback):
