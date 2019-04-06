@@ -8,6 +8,7 @@ from pickle import dumps, loads
 from honeybadgermpc.mpc import Mpc
 from honeybadgermpc.config import HbmpcConfig, ConfigVars
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
+from honeybadgermpc.asyncio_wrapper import create_background_task
 
 
 class NodeCommunicator(object):
@@ -62,7 +63,7 @@ class NodeCommunicator(object):
         router = Context().socket(ROUTER)
         router.bind(f"tcp://*:{self.peers_config[self.my_id].port}")
         # Start a task to receive messages on this node.
-        self._router_task = asyncio.create_task(self._recv_loop(router))
+        self._router_task = create_background_task(self._recv_loop(router))
 
         # Setup one dealer per receving party. This is used
         # as a client to send messages to other parties.
@@ -78,7 +79,7 @@ class NodeCommunicator(object):
                 # Setup a task which reads messages intended for this
                 # party from a queue and then sends them to this node.
                 self._dealer_tasks.append(
-                    asyncio.create_task(
+                    create_background_task(
                         self._process_node_messages(
                             i, self._sender_queues[i], dealer.send_multipart)))
 
@@ -129,7 +130,7 @@ class ProcessProgramRunner(object):
             )
         program_result = asyncio.Future()
         def callback(future): program_result.set_result(future.result())
-        task = asyncio.create_task(context._run())
+        task = create_background_task(context._run())
         task.add_done_callback(callback)
         self.progs.append(task)
         return program_result

@@ -8,6 +8,7 @@ from honeybadgermpc.symmetric_crypto import SymmetricCrypto
 from honeybadgermpc.exceptions import HoneyBadgerMPCError
 from honeybadgermpc.protocols.reliablebroadcast import reliablebroadcast
 from honeybadgermpc.protocols.avid import AVID
+from honeybadgermpc.asyncio_wrapper import create_background_task
 
 # TODO: Move these to a separate file instead of using it from batch_reconstruction.py
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
@@ -202,11 +203,11 @@ class HbAvssBatch(HbAvss):
     async def _recv_loop(self, q):
         while True:
             avid, tag, dispersal_msg_list = await q.get()
-            self.tasks.append(asyncio.create_task(
+            self.tasks.append(create_background_task(
                 avid.disperse(tag, self.my_id, dispersal_msg_list)))
 
     def __enter__(self):
-        self._recv_task = asyncio.create_task(self._recv_loop(self.avid_msg_queue))
+        self._recv_task = create_background_task(self._recv_loop(self.avid_msg_queue))
         return self
 
     def __exit__(self, typ, value, traceback):

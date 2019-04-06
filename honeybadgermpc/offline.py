@@ -9,6 +9,7 @@ from honeybadgermpc.field import GF
 from honeybadgermpc.elliptic_curve import Subgroup
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 from abc import ABC, abstractmethod
+from honeybadgermpc.asyncio_wrapper import create_background_task
 
 
 def get_avss_params(n, t, my_id):
@@ -100,7 +101,7 @@ class PreProcessingBase(ABC):
         g, h, pks, sk = get_avss_params(n, t, my_id)
         self.avss_instance = HbAvssLight(pks, sk, g, h, n, t, my_id, send, recv)
         self.avss_instance.__enter__()
-        self.tasks.append(asyncio.create_task(self._runner()))
+        self.tasks.append(create_background_task(self._runner()))
 
         send, recv = self.get_send_recv(f'{self.tag}-AVSS_VALUE_PROCESSOR')
         pk, sks = dealer(n, t+1, seed=17)
@@ -111,7 +112,7 @@ class PreProcessingBase(ABC):
             self.avss_instance.output_queue.get,
             self.avss_value_processor_chunk_size)
         self.avss_value_processor.__enter__()
-        self.tasks.append(asyncio.create_task(self._extract()))
+        self.tasks.append(create_background_task(self._extract()))
         return self
 
     def __exit__(self, *args):

@@ -1,6 +1,7 @@
 import logging
 import base64
 from honeybadgermpc.protocols.crypto.boldyreva import serialize, deserialize1
+from honeybadgermpc.asyncio_wrapper import create_background_task
 import asyncio
 from collections import defaultdict
 import hashlib
@@ -46,8 +47,8 @@ async def shared_coin(sid, pid, n, f, pk, sk, broadcast, receive):
             (i, (_, r, sig_bytes)) = await receive()
             sig = deserialize1(sig_bytes)
             logger.debug(
-                          f'[{pid}] received i, _, r, sig: {i, _, r, sig}',
-                          extra={'nodeid': pid, 'epoch': r})
+                f'[{pid}] received i, _, r, sig: {i, _, r, sig}',
+                extra={'nodeid': pid, 'epoch': r})
             assert i in range(n)
             assert r >= 0
             if i in received[r]:
@@ -86,7 +87,7 @@ async def shared_coin(sid, pid, n, f, pk, sk, broadcast, receive):
                     extra={'nodeid': pid, 'epoch': r})
                 output_queue[r].put_nowait(bit)
 
-    recv_task = asyncio.create_task(_recv())
+    recv_task = create_background_task(_recv())
 
     async def get_coin(round):
         """Gets a coin.
@@ -98,8 +99,8 @@ async def shared_coin(sid, pid, n, f, pk, sk, broadcast, receive):
         # I have to do mapping to 1..l
         h = pk.hash_message(str((sid, round)))
         logger.debug(
-                      f"[{pid}] broadcast {('COIN', round, sk.sign(h))}",
-                      extra={'nodeid': pid, 'epoch': round})
+            f"[{pid}] broadcast {('COIN', round, sk.sign(h))}",
+            extra={'nodeid': pid, 'epoch': round})
         broadcast(('COIN', round, serialize(sk.sign(h))))
         return await output_queue[round].get()
 

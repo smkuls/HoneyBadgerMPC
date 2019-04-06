@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from honeybadgermpc.asyncio_wrapper import create_background_task
 
 
 async def commonsubset(pid, n, f, rbc_out, aba_in, aba_out):
@@ -50,7 +51,7 @@ async def commonsubset(pid, n, f, rbc_out, aba_in, aba_out):
         # print pid, j, 'EXITING CRITICAL'
 
     # Wait for all binary agreements
-    await asyncio.gather(*[asyncio.create_task(_recv_aba(j)) for j in range(n)])
+    await asyncio.gather(*[_recv_aba(j) for j in range(n)])
 
     assert sum(aba_values) >= n - f  # Must have at least N-f committed
 
@@ -92,7 +93,7 @@ async def make_commonsubset(sid, pid, n, f, pk, sk, input_msg, send, recv, bcast
                 raise ValueError("Unknown tag: %s", tag)
 
     recv_tasks = []
-    recv_tasks.append(asyncio.create_task(_recv()))
+    recv_tasks.append(create_background_task(_recv()))
 
     async def _setup(j):
         def coin_bcast(o):

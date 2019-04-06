@@ -8,6 +8,7 @@ from math import ceil
 import time
 from .reed_solomon import Algorithm, EncoderFactory, DecoderFactory, RobustDecoderFactory
 from .reed_solomon import IncrementalDecoder
+from honeybadgermpc.asyncio_wrapper import create_background_task
 import random
 
 
@@ -37,7 +38,7 @@ def subscribe_recv(recv):
         taken.add(tag)
         return tag_table[tag].get
 
-    _task = asyncio.create_task(_recv_loop())
+    _task = create_background_task(_recv_loop())
     return _task, subscribe
 
 
@@ -56,7 +57,7 @@ def recv_each_party(recv, n):
             j, o = await recv()
             queues[j].put_nowait(o)
 
-    _task = asyncio.create_task(_recv_loop())
+    _task = create_background_task(_recv_loop())
     return _task, [q.get for q in queues]
 
 
@@ -141,8 +142,8 @@ async def batch_reconstruct(secret_shares, p, t, n, myid, send, recv, config=Non
 
     task_r1, q_r1 = recv_each_party(subscribe('R1'), n)
     task_r2, q_r2 = recv_each_party(subscribe('R2'), n)
-    data_r1 = [asyncio.create_task(recv()) for recv in q_r1]
-    data_r2 = [asyncio.create_task(recv()) for recv in q_r2]
+    data_r1 = [create_background_task(recv()) for recv in q_r1]
+    data_r2 = [create_background_task(recv()) for recv in q_r2]
     del subscribe  # ILC should determine we can garbage collect after this
 
     enc = EncoderFactory.get(point, Algorithm.FFT if use_fft else Algorithm.VANDERMONDE)

@@ -3,6 +3,7 @@ from collections import defaultdict
 import logging
 
 from honeybadgermpc.exceptions import RedundantMessageError, AbandonedNodeError
+from honeybadgermpc.asyncio_wrapper import create_background_task
 
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ async def binaryagreement(sid, pid, n, f, coin, input_msg, decide, broadcast, re
                 )
 
     # Run the receive loop in the background
-    _thread_recv = asyncio.create_task(_recv())
+    _thread_recv = create_background_task(_recv())
 
     # Block waiting for the input
     vi = await input_msg()
@@ -192,8 +193,8 @@ async def binaryagreement(sid, pid, n, f, coin, input_msg, decide, broadcast, re
 
         values = None
         logger.debug(
-                      f'block until at least N-f ({n-f}) AUX values are received',
-                      extra={'nodeid': pid, 'epoch': r})
+            f'block until at least N-f ({n-f}) AUX values are received',
+            extra={'nodeid': pid, 'epoch': r})
         while True:
             logger.debug(
                 f'[{pid}] bin_values[{r}]: {bin_values[r]}',
@@ -218,12 +219,12 @@ async def binaryagreement(sid, pid, n, f, coin, input_msg, decide, broadcast, re
             await bv_signal.wait()
 
         logger.debug(
-                      f'[{pid}] Completed AUX phase with values = {values}',
-                      extra={'nodeid': pid, 'epoch': r})
+            f'[{pid}] Completed AUX phase with values = {values}',
+            extra={'nodeid': pid, 'epoch': r})
 
         # CONF phase
         logger.debug(
-                      f'[{pid}] block until at least N-f ({n-f}) CONF values\
+            f'[{pid}] block until at least N-f ({n-f}) CONF values\
                     are received', extra={'nodeid': pid, 'epoch': r})
         if not conf_sent[r][tuple(values)]:
             values = await wait_for_conf_values(
@@ -239,8 +240,8 @@ async def binaryagreement(sid, pid, n, f, coin, input_msg, decide, broadcast, re
                 broadcast=broadcast,
             )
         logger.debug(
-                      f'[{pid}] Completed CONF phase with values = {values}',
-                      extra={'nodeid': pid, 'epoch': r})
+            f'[{pid}] Completed CONF phase with values = {values}',
+            extra={'nodeid': pid, 'epoch': r})
 
         logger.debug(
             f'[{pid}] Block until receiving the common coin value',

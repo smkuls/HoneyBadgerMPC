@@ -12,6 +12,7 @@ from .elliptic_curve import Subgroup
 from .preprocessing import PreProcessedElements
 from .mixins import MixinOpName
 from .config import ConfigVars
+from honeybadgermpc.asyncio_wrapper import create_background_task
 
 
 class NotEnoughShares(Exception):
@@ -111,19 +112,10 @@ class Mpc(object):
     async def _run(self):
         # Run receive loop as background task, until self.prog finishes
         # Cancel the background task, even if there's an exception
-        bgtask = asyncio.create_task(self._recvloop())
-        result = asyncio.create_task(self.prog(self, **self.prog_args))
-        await asyncio.wait((bgtask, result), return_when=asyncio.FIRST_COMPLETED)
-
-        if result.done():
-            bgtask.cancel()
-            return result.result()
-        else:
-            logging.info(f'bgtask exception: {bgtask.exception()}')
-            raise bgtask.exception()
-            # FIXME: This code is unreachable and needs to be investigated
-            bgtask.cancel()
-            return await result
+        bgtask = create_background_task(self._recvloop())
+        result = await asyncio.create_task(self.prog(self, **self.prog_args))
+        bgtask.cancel()
+        return result
 
     async def _recvloop(self):
         while True:
@@ -201,7 +193,7 @@ def share_in_context(context):
             res = GFElementFuture()
 
             def cb(f): return res.set_result(f.result())
-            opening = asyncio.ensure_future(context.open_share(self))
+            opening = create_background_task(context.open_share(self))
             # context._newopening.put_nowait(opening)
             opening.add_done_callback(cb)
             return res
@@ -302,7 +294,7 @@ def share_in_context(context):
             res = asyncio.Future()
 
             def cb(f): return res.set_result(f.result())
-            opening = asyncio.create_task(context.open_share_array(self))
+            opening = create_background_task(context.open_share_array(self))
             opening.add_done_callback(cb)
             return res
 

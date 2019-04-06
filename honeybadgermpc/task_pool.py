@@ -2,21 +2,24 @@
 
 import asyncio
 from asyncio.queues import Queue
+from .asyncio_wrapper import create_background_task
 
 
 class TaskPool(object):
+    TERMINATOR = "TERMINATOR"
+
     def __init__(self, num_workers):
         self.loop = asyncio.get_event_loop()
         self.tasks = Queue(loop=self.loop)
         self.workers = []
         for _ in range(num_workers):
-            worker = asyncio.ensure_future(self.worker(), loop=self.loop)
+            worker = create_background_task(self.worker())
             self.workers.append(worker)
 
     async def worker(self):
         while True:
             future, task = await self.tasks.get()
-            if task == "TERMINATOR":
+            if task == TaskPool.TERMINATOR:
                 break
             result = await asyncio.wait_for(task, None, loop=self.loop)
             future.set_result(result)
@@ -28,5 +31,5 @@ class TaskPool(object):
 
     async def close(self):
         for _ in self.workers:
-            self.tasks.put_nowait((None, "TERMINATOR"))
+            self.tasks.put_nowait((None, TaskPool.TERMINATOR))
         await asyncio.gather(*self.workers, loop=self.loop)

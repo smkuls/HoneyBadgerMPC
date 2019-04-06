@@ -4,6 +4,7 @@ from pickle import dumps, loads
 from collections import defaultdict
 from honeybadgermpc.protocols.commonsubset import run_common_subset
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
+from honeybadgermpc.asyncio_wrapper import create_background_task
 from honeybadgermpc.sequencer import Sequencer
 
 
@@ -247,8 +248,8 @@ class AvssValueProcessor(object):
         logging.debug("[%d] All values processed [%s]", self.my_id, sid)
 
     def __enter__(self):
-        self.tasks.append(asyncio.create_task(self._recv_loop()))
-        self.tasks.append(asyncio.create_task(self._acs_runner()))
+        self.tasks.append(create_background_task(self._recv_loop()))
+        self.tasks.append(create_background_task(self._acs_runner()))
         return self
 
     def __exit__(self, type, value, traceback):

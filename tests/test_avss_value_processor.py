@@ -206,8 +206,9 @@ async def test_acs_output(n, t, output_counts, next_idx, acs_outputs):
     my_id = 0
 
     input_q = asyncio.Queue()
+    recv = asyncio.Queue().get
     with AvssValueProcessor(None, None, n, t, my_id,
-                            None, None, input_q.get) as proc:
+                            None, recv, input_q.get) as proc:
         proc._process_acs_output(acs_outputs)
         assert [len(proc.outputs_per_dealer[i]) for i in range(n)] == output_counts
         for i in range(n):
@@ -248,8 +249,9 @@ async def test_with_agreed_values_on_same_node_with_input(k, acs_outputs):
     n, t, my_id = 4, 1, 0
 
     input_q = asyncio.Queue()
+    recv = asyncio.Queue().get
     with AvssValueProcessor(None, None, n, t, my_id,
-                            None, None, input_q.get) as proc:
+                            None, recv, input_q.get) as proc:
         for i in range(k):
             value = (my_id, i, i)  # dealer_id, avss_id, value
             input_q.put_nowait(value)
@@ -290,8 +292,9 @@ async def test_with_agreed_values_on_another_node_with_input(k, acs_outputs):
     n, t, sender_id = 4, 1, 1
 
     input_q = asyncio.Queue()
+    recv = asyncio.Queue().get
     with AvssValueProcessor(None, None, n, t, 0,
-                            None, None, input_q.get) as proc:
+                            None, recv, input_q.get) as proc:
         proc._process_acs_output(acs_outputs)
 
         # 0th node has not received any AVSSed value from node 1 yet
