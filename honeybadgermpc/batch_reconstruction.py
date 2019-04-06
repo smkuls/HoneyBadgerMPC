@@ -102,7 +102,9 @@ async def incremental_decode(receivers, encoder, decoder, robust_decoder, batch_
     async for idx, d in fetch_one(receivers):
         inc_decoder.add(idx, d)
         if inc_decoder.done():
-            result, _ = inc_decoder.get_results()
+            result, errors = inc_decoder.get_results()
+            if len(errors) > 0:
+                logging.warning("Errors found during decoding %s", errors)
             return result
     return None
 

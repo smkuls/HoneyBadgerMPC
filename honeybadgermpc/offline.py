@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from time import time
 from honeybadgermpc.hbavss import HbAvssBatch
 from honeybadgermpc.avss_value_processor import AvssValueProcessor
 from honeybadgermpc.protocols.crypto.boldyreva import dealer
@@ -65,7 +66,9 @@ class PreProcessingBase(ABC):
             logging.debug("[%d] Start AVSS. id: %d", self.my_id, i)
             await self._trigger_and_wait_for_avss(i)
             logging.debug("[%d] AVSS Completed. Start ACS. id: %d", self.my_id, i)
+            stime = time()
             await self.avss_value_processor.run_acs(i)
+            logging.info("ACS Time: %f", time()-stime)
             logging.debug("[%d] ACS Completed. id: %d", self.my_id, i)
 
     async def _get_output_batch(self):
@@ -155,37 +158,44 @@ class TripleGenerator(PreProcessingBase):
 
 
 async def get_random(n, t, my_id, send, recv):
-    with RandomGenerator(n, t, my_id, send, recv) as random_generator:
-        while True:
-            yield await random_generator.get()
+    iterations = 10
+    b = 2**10
+    k = iterations*b*(n-t)
+    randoms = [None]*k
+    stime = time()
+    with RandomGenerator(n, t, my_id, send, recv, b, iterations) as random_generator:
+        for i in range(k):
+            randoms[i] = await random_generator.get()
+    total_time = time()-stime
+    logging.info("Generated [%d] in %f [%f/second].", k, total_time, k/total_time)
+    logging.info("Number of unique values: %d/%d", len(set(randoms)), k)
+    return randoms
 
 
-async def _mpc_prog(context, **kwargs):
-    randoms = kwargs["randoms"]
-    n, i = 10, 0
-    async for random in randoms:
-        logging.info("i: %d => %d", i, await context.Share(random).open())
-        i += 1
-        if i == n:
-            break
-    await randoms.aclose()
+async def _mpc_prog(context, randoms):
+    values = await randoms
+    assert all(v is not None for v in values)
+    stime = time()
+    await context.ShareArray(values).open()
+    logging.info("Batch opening - %d. Time: %f", len(values), time()-stime)
 
 
 async def _prog(peers, n, t, my_id):
     async with ProcessProgramRunner(peers, n, t, my_id) as runner:
         send, recv = runner.get_send_recv(0)
-        runner.execute(1, _mpc_prog, randoms=get_random(n, t, my_id, send, recv))
+        task = asyncio.create_task(get_random(n, t, my_id, send, recv))
+        runner.execute(1, _mpc_prog, randoms=task)
 
 
 if __name__ == "__main__":
     from honeybadgermpc.config import HbmpcConfig
     from honeybadgermpc.ipc import ProcessProgramRunner
 
-    asyncio.set_event_loop(asyncio.new_event_loop())
-    loop = asyncio.get_event_loop()
-    loop.set_debug(True)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(_prog(
             HbmpcConfig.peers, HbmpcConfig.N, HbmpcConfig.t, HbmpcConfig.my_id))
     finally:
         loop.close()
+    logging.info("-"*80)

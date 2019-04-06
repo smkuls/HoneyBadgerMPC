@@ -1,9 +1,10 @@
 from honeybadgermpc.polynomial import get_omega, polynomials_over
 
 
-def refine_randoms(n, t, field, random_shares_int):
+def refine_randoms(n, t, field, random_shares):
     assert 3*t + 1 <= n
 
+    random_shares_int = list(map(int, random_shares))
     # Number of nodes which have contributed values to this batch
     k = len(random_shares_int)
     assert k >= n-t and k <= n

@@ -16,7 +16,7 @@ def create_background_task(coroutine):
 
     def callback(future):
         if future.cancelled():
-            logging.warning(
+            logging.debug(
                 "Background task at [%s] was cancelled.", caller_details)
             return
         if future.done():

@@ -4,6 +4,7 @@ import asyncio
 from zmq import ROUTER, DEALER, IDENTITY
 from zmq.asyncio import Context
 from pickle import dumps, loads
+from psutil import cpu_count
 
 from honeybadgermpc.mpc import Mpc
 from honeybadgermpc.config import HbmpcConfig, ConfigVars
@@ -14,7 +15,7 @@ from honeybadgermpc.asyncio_wrapper import create_background_task
 class NodeCommunicator(object):
     LAST_MSG = None
 
-    def __init__(self, peers_config, my_id):
+    def __init__(self, peers_config, my_id, linger_timeout):
         self.peers_config = peers_config
         self.my_id = my_id
 
@@ -24,6 +25,8 @@ class NodeCommunicator(object):
 
         self._dealer_tasks = []
         self._router_task = None
+        self.linger_timeout = linger_timeout
+        self.zmq_context = Context(io_threads=cpu_count())
 
         n = len(peers_config)
         self._receiver_queue = asyncio.Queue()
@@ -48,19 +51,19 @@ class NodeCommunicator(object):
     async def __aexit__(self, exc_type, exc, tb):
         self.benchmark_logger.info("Total bytes sent out: %d", self.bytes_sent)
         # Add None to the sender queues and drain out all the messages.
-        for q in self._sender_queues:
-            q.put_nowait(None)
+        for i in range(len(self._sender_queues)):
+            if i != self.my_id:
+                self._sender_queues[i].put_nowait(NodeCommunicator.LAST_MSG)
         await asyncio.gather(*self._dealer_tasks)
         logging.debug("Dealer tasks finished.")
         self._router_task.cancel()
         logging.debug("Router task cancelled.")
-        # Let ZMQ garbage collect the context and the sockets
-        # Manually destroying it causes the recipients to hang.
+        self.zmq_context.destroy(linger=self.linger_timeout*1000)
 
     async def _setup(self):
         # Setup one router for a party, this acts as a
         # server for receiving messages from other parties.
-        router = Context().socket(ROUTER)
+        router = self.zmq_context.socket(ROUTER)
         router.bind(f"tcp://*:{self.peers_config[self.my_id].port}")
         # Start a task to receive messages on this node.
         self._router_task = create_background_task(self._recv_loop(router))
@@ -69,7 +72,7 @@ class NodeCommunicator(object):
         # as a client to send messages to other parties.
         for i in range(len(self.peers_config)):
             if i != self.my_id:
-                dealer = Context().socket(DEALER)
+                dealer = self.zmq_context.socket(DEALER)
                 # This identity is sent with each message. Setting it to my_id, this is
                 # used to appropriately route the message. This is not a good idea since
                 # a node can pretend to send messages on behalf of other nodes.
@@ -93,7 +96,7 @@ class NodeCommunicator(object):
     async def _process_node_messages(self, node_id, node_msg_queue, send_to_node):
         while True:
             msg = await node_msg_queue.get()
-            if msg is None:
+            if msg is NodeCommunicator.LAST_MSG:
                 logging.debug("No more messages to Node: %d can be sent.", node_id)
                 break
             raw_msg = dumps(msg)
@@ -103,7 +106,7 @@ class NodeCommunicator(object):
 
 
 class ProcessProgramRunner(object):
-    def __init__(self, peers_config, n, t, my_id, mpc_config={}):
+    def __init__(self, peers_config, n, t, my_id, mpc_config={}, linger_timeout=2):
         self.peers_config = peers_config
         self.n = n
         self.t = t
@@ -111,23 +114,23 @@ class ProcessProgramRunner(object):
         self.mpc_config = mpc_config
         self.mpc_config[ConfigVars.Reconstruction] = HbmpcConfig.reconstruction
 
-        self.node_communicator = NodeCommunicator(peers_config, my_id)
+        self.node_communicator = NodeCommunicator(peers_config, my_id, linger_timeout)
         self.progs = []
 
     def execute(self, program_tag, program, **kwargs):
         send, recv = self.get_send_recv(program_tag)
         context = Mpc(
-                'sid',
-                self.n,
-                self.t,
-                self.my_id,
-                program_tag,
-                send,
-                recv,
-                program,
-                self.mpc_config,
-                **kwargs,
-            )
+            'sid',
+            self.n,
+            self.t,
+            self.my_id,
+            program_tag,
+            send,
+            recv,
+            program,
+            self.mpc_config,
+            **kwargs,
+        )
         program_result = asyncio.Future()
         def callback(future): program_result.set_result(future.result())
         task = create_background_task(context._run())

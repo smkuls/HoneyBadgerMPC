@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from time import time
 from pickle import dumps, loads
 from honeybadgermpc.betterpairing import ZR
 from honeybadgermpc.polynomial import polynomials_over
@@ -17,7 +18,7 @@ from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 # Uncomment this when you want logs from this file.
-# logger.setLevel(logging.NOTSET)
+logger.setLevel(logging.NOTSET)
 
 
 class HbAVSSMessageType:
@@ -217,6 +218,7 @@ class HbAvssBatch(HbAvss):
         super(HbAvssBatch, self).__exit__(typ, value, traceback)
 
     async def _process_avss_msg(self, avss_id, dealer_id, dispersal_msg):
+        stime = time()
         tag = f"{dealer_id}-{avss_id}-B-AVSS"
         send, recv = self.get_send(tag), self.subscribe_recv(tag)
 
@@ -247,6 +249,7 @@ class HbAvssBatch(HbAvss):
                 logging.error("PolyCommit verification failed.")
                 raise HoneyBadgerMPCError("PolyCommit verification failed.")
 
+        logger.info("[%d][%d] Verification time: %s", self.my_id, avss_id, time()-stime)
         multicast(HbAVSSMessageType.OK)
 
         # Bracha-style agreement
@@ -328,7 +331,9 @@ class HbAvssBatch(HbAvss):
 
         dispersal_msg_list = None
         if self.my_id == dealer_id:
+            stime = time()
             dispersal_msg_list = self._get_dealer_msg(values)
+            logger.info("[%d][%d] Dealer time: %s", self.my_id, avss_id, time()-stime)
 
         # In the client_mode, the dealer is the last node
         n = self.n if not client_mode else self.n+1
