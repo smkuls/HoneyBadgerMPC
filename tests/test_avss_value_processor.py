@@ -331,7 +331,7 @@ async def test_with_agreed_values_on_another_node_with_input(k, acs_outputs):
 
 
 @mark.parametrize(
-        "n, t, b, input_next_ids, output_next_ids, per_dealer_input, output_queue_vals",
+        "n, t, input_next_ids, output_next_ids, per_dealer_input, output_queue_vals",
         (
             (4, 1, [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], []),  # 1 test case
             (4, 1, [0, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0], []),

@@ -11,11 +11,11 @@ handlers:
     stream: ext://sys.stdout
   benchmark_log_file:
     class: logging.FileHandler
-    filename: benchmark-logs/benchmark.log
+    filename: logs/benchmark.log
     formatter: with_node_id
   basic_log_file:
     class: logging.FileHandler
-    filename: dump.log
+    filename: logs/dump.log
     formatter: simple
 loggers:
   benchmark_logger:

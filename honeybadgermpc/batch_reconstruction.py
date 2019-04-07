@@ -139,8 +139,8 @@ async def batch_reconstruct(secret_shares, p, t, n, myid, send, recv, config=Non
         secret_shares = [random.randint(0, p - 1) for _ in range(len(secret_shares))]
 
     point = EvalPoint(fp, n, use_fft=use_fft)
-    bench_logger = logging.LoggerAdapter(logging.getLogger("benchmark_logger"),
-                                         {"node_id": myid})
+    # bench_logger = logging.LoggerAdapter(logging.getLogger("benchmark_logger"),
+    #                                      {"node_id": myid})
     subscribe_task, subscribe = subscribe_recv(recv)
     del recv  # ILC enforces this in type system, no duplication of reads
 
@@ -163,8 +163,8 @@ async def batch_reconstruct(secret_shares, p, t, n, myid, send, recv, config=Non
     to_send = list_transpose(encoded)
     for j in range(n):
         send(j, ('R1', to_send[j]))
-    end_time = time.time()
-    bench_logger.info(f"[BatchReconstruct] P1 Send: {end_time - start_time}")
+    # end_time = time.time()
+    # bench_logger.info(f"[BatchReconstruct] P1 Send: {end_time - start_time}")
 
     # Step 2: Attempt to reconstruct P1
     start_time = time.time()
@@ -174,28 +174,28 @@ async def batch_reconstruct(secret_shares, p, t, n, myid, send, recv, config=Non
         logging.error("[BatchReconstruct] P1 reconstruction failed!")
         return None
 
-    end_time = time.time()
-    bench_logger.info(f"[BatchReconstruct] P1 Reconstruct: {end_time - start_time}")
+    # end_time = time.time()
+    # bench_logger.info(f"[BatchReconstruct] P1 Reconstruct: {end_time - start_time}")
 
     # Step 3: Send R2 points
     # These are simply evaluations at x=0 or just the constant term
-    start_time = time.time()
+    # start_time = time.time()
     to_send = [chunk[0] for chunk in recons_r2]
     for j in range(n):
         send(j, ('R2', to_send))
-    end_time = time.time()
-    bench_logger.info(f"[BatchReconstruct] P2 Send: {end_time - start_time}")
+    # end_time = time.time()
+    # bench_logger.info(f"[BatchReconstruct] P2 Send: {end_time - start_time}")
 
     # Step 4: Attempt to reconstruct R2
-    start_time = time.time()
+    # start_time = time.time()
     recons_p = await incremental_decode(data_r2, enc, dec, robust_dec,
                                         num_chunks, t, n)
     if recons_p is None:
         logging.error("[BatchReconstruct] P2 reconstruction failed!")
         return None
 
-    end_time = time.time()
-    bench_logger.info(f"[BatchReconstruct] P2 Reconstruct: {end_time - start_time}")
+    # end_time = time.time()
+    # bench_logger.info(f"[BatchReconstruct] P2 Reconstruct: {end_time - start_time}")
 
     task_r1.cancel()
     task_r2.cancel()
