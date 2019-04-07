@@ -53,6 +53,7 @@ async def get_triples(n, t, my_id, send, recv):
                 c += 1
             batches[i] = batch
     total_time = time()-stime
+    logging.info("Batch size: %d, Iterations: %s, n: %d, t: %d", b, iterations, b, t)
     logging.info("Generated [%d/%d] in %f [%f/second].", c, e, total_time, c/total_time)
     return batches
 

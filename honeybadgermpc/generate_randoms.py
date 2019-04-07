@@ -36,6 +36,7 @@ async def get_randoms(n, t, my_id, send, recv):
         for i in range(k):
             randoms[i] = await rand_generator.get()
     total_time = time()-stime
+    logging.info("Batch size: %d, Iterations: %s, n: %d, t: %d", b, iterations, b, t)
     logging.info("Total generated [%d/%d] in %f [%f/second].",
                  k, e, total_time, k/total_time)
     logging.info("Number of unique values: %d/%d", len(set(randoms)), k)

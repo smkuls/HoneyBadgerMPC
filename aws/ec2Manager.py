@@ -135,17 +135,9 @@ class EC2Manager:
                 pkey=key)
             for command in commands:
                 _, stdout, stderr = ssh_client.exec_command(command)
-                self.screenLock.acquire()
                 output = stdout.read()
                 if len(output) != 0:
                     output = output.decode('utf-8')
-                    if verbose:
-                        print()
-                        print(
-                            f"{'#'*10} OUTPUT FROM {ip} {'#'*10}"
-                        )
-                        logging.info(output)
-                        print("#" * 30)
                     if output_file_prefix:
                         with open(
                             f"{output_file_prefix}_" +
@@ -155,6 +147,16 @@ class EC2Manager:
                             output_file.write(output)
 
                 err = stderr.read()
+
+                self.screenLock.acquire()
+                if verbose:
+                    if len(output) > 0:
+                        print()
+                        print(
+                            f"{'#'*10} OUTPUT FROM {ip} {'#'*10}"
+                        )
+                        logging.info(output)
+                        print("#" * 30)
                 if len(err) != 0:
                     print()
                     print(
@@ -163,6 +165,7 @@ class EC2Manager:
                     print(err.decode('utf-8'))
                     print("~" * 30)
                 self.screenLock.release()
+        except Exception:
+            logging.exception("Failed to execute command.")
+        finally:
             ssh_client.close()
-        except Exception as ex:
-            print(ex)

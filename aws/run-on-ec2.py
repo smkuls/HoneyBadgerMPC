@@ -57,10 +57,13 @@ def run_commands_on_instances(
     if not all_vms:
         k = n-t
     completed = 0
-    while completed < k and len(pending) > 0:
+    while True:
         done, pending = concurrent.futures.wait(
             pending, return_when=concurrent.futures.FIRST_COMPLETED)
         completed += len(done)
+        if completed >= k:
+            break
+    executor.shutdown(wait=False)
 
 
 def get_ipc_setup_commands(s3manager, instance_ids):
@@ -272,14 +275,15 @@ def trigger_run(run_id, skip_setup, max_k, only_setup, cleanup):
         for _, command in instance_commands:
             print(' '.join(command[0].split()))
         logging.info("Triggering MPC commands.")
-        run_commands_on_instances(ec2manager, instance_commands, False, all_vms=False)
-        logging.info("Collecting logs.")
-        log_collection_cmds = [[id, ["cat logs/*.log"]] for id in instance_ids]
-        os.makedirs(run_id, exist_ok=True)
-        run_commands_on_instances(
-            ec2manager, log_collection_cmds, True, f"{run_id}/logs")
-
+        run_commands_on_instances(ec2manager, instance_commands, all_vms=False)
+        # logging.info("Collecting logs.")
+        # log_collection_cmds = [[id, ["cat logs/*.log"]] for id in instance_ids]
+        # os.makedirs("logs/"+run_id, exist_ok=True)
+        # run_commands_on_instances(
+        #     ec2manager, log_collection_cmds, True,
+        #     f"logs/{run_id}/logs", all_vms=False)
     s3manager.cleanup()
+    os._exit(0)  # Hard exit because some threads might be still running
 
 
 if __name__ == "__main__":
@@ -324,4 +328,6 @@ if __name__ == "__main__":
     if args.skip_setup and not args.run_id:
         parser.error("--run-id needs to be passed with --skip-setup.")
     args.run_id = uuid.uuid4().hex if args.run_id is None else args.run_id
+    logging.info("Starting AWS execution.")
     trigger_run(args.run_id, args.skip_setup, args.max_k, args.only_setup, args.cleanup)
+    logging.info("Execution finised.")
