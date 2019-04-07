@@ -91,8 +91,8 @@ async def test_binaryagreement_dummy(test_router):
 
         t = create_task(
             binaryagreement(
-                            sid, i, n, f, coin, inputs[i].get, outputs[i].put_nowait,
-                            sends[i], recvs[i]))
+                sid, i, n, f, coin, inputs[i].get, outputs[i].put_nowait,
+                sends[i], recvs[i]))
         threads.append(t)
 
     for i in range(n):
@@ -103,6 +103,7 @@ async def test_binaryagreement_dummy(test_router):
     outs = await gather(*[outputs[i].get() for i in range(n)])
     assert len(set(outs)) == 1
     await gather(*threads)
+
 
 @mark.skip("Skipping this test since background threads call system.exit")
 @mark.parametrize('msg_type', ('EST', 'AUX', 'CONF'))
@@ -124,8 +125,8 @@ async def test_binaryagreement_dummy_with_redundant_messages(byznode, msg_type):
         inputs.append(Queue())
         outputs.append(Queue())
         t = create_task(
-                        binaryagreement(sid, i, n, f, coin, inputs[i].get,
-                                        outputs[i].put_nowait, sends[i], recvs[i]))
+            binaryagreement(sid, i, n, f, coin, inputs[i].get,
+                            outputs[i].put_nowait, sends[i], recvs[i]))
         threads.append(t)
 
     for i in range(n):
@@ -155,8 +156,8 @@ async def test_binaryagreement_dummy_with_byz_message_type(byznode):
         inputs.append(Queue())
         outputs.append(Queue())
         t = create_task(
-                        binaryagreement(sid, i, n, f, coin, inputs[i].get,
-                                        outputs[i].put_nowait, sends[i], recvs[i]))
+            binaryagreement(sid, i, n, f, coin, inputs[i].get,
+                            outputs[i].put_nowait, sends[i], recvs[i]))
         threads.append(t)
 
     for i in range(n):
@@ -204,8 +205,8 @@ async def test_binaryagreement(seed, test_router):
         outputs.append(Queue())
 
         t = create_task(
-                        binaryagreement(sid, i, n, f, coins[i], inputs[i].get,
-                                        outputs[i].put_nowait, sends[i], recvs[i]))
+            binaryagreement(sid, i, n, f, coins[i], inputs[i].get,
+                            outputs[i].put_nowait, sends[i], recvs[i]))
         threads.append(t)
 
     for i in range(n):
@@ -220,8 +221,8 @@ async def test_binaryagreement(seed, test_router):
 @mark.parametrize('values,s,already_decided,expected_est,'
                   'expected_already_decided,expected_output',
                   (
-                    ({0}, 0, None, 0, 0, 0),
-                    ({1}, 1, None, 1, 1, 1),))
+                      ({0}, 0, None, 0, 0, 0),
+                      ({1}, 1, None, 1, 1, 1),))
 @mark.asyncio
 async def test_set_next_round_estimate_with_decision(
         values,
@@ -246,20 +247,20 @@ async def test_set_next_round_estimate_with_decision(
 @mark.parametrize('values,s,already_decided,'
                   'expected_est,expected_already_decided',
                   (
-                    ({0}, 0, 1, 0, 1),
-                    ({0}, 1, None, 0, None),
-                    ({0}, 1, 0, 0, 0),
-                    ({0}, 1, 1, 0, 1),
-                    ({1}, 0, None, 1, None),
-                    ({1}, 0, 0, 1, 0),
-                    ({1}, 0, 1, 1, 1),
-                    ({1}, 1, 0, 1, 0),
-                    ({0, 1}, 0, None, 0, None),
-                    ({0, 1}, 0, 0, 0, 0),
-                    ({0, 1}, 0, 1, 0, 1),
-                    ({0, 1}, 1, None, 1, None),
-                    ({0, 1}, 1, 0, 1, 0),
-                    ({0, 1}, 1, 1, 1, 1),))
+                      ({0}, 0, 1, 0, 1),
+                      ({0}, 1, None, 0, None),
+                      ({0}, 1, 0, 0, 0),
+                      ({0}, 1, 1, 0, 1),
+                      ({1}, 0, None, 1, None),
+                      ({1}, 0, 0, 1, 0),
+                      ({1}, 0, 1, 1, 1),
+                      ({1}, 1, 0, 1, 0),
+                      ({0, 1}, 0, None, 0, None),
+                      ({0, 1}, 0, 0, 0, 0),
+                      ({0, 1}, 0, 1, 0, 1),
+                      ({0, 1}, 1, None, 1, None),
+                      ({0, 1}, 1, 0, 1, 0),
+                      ({0, 1}, 1, 1, 1, 1),))
 def test_set_next_round_estimate(values, s, already_decided,
                                  expected_est, expected_already_decided):
     from honeybadgermpc.protocols.binaryagreement import set_new_estimate

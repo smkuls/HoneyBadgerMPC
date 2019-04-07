@@ -2,6 +2,7 @@ import logging
 import asyncio
 
 from zmq import ROUTER, DEALER, IDENTITY
+from zmq.error import ZMQError
 from zmq.asyncio import Context
 from pickle import dumps, loads
 from psutil import cpu_count
@@ -58,7 +59,10 @@ class NodeCommunicator(object):
         logging.debug("Dealer tasks finished.")
         self._router_task.cancel()
         logging.debug("Router task cancelled.")
-        self.zmq_context.destroy(linger=self.linger_timeout*1000)
+        try:
+            self.zmq_context.destroy(linger=self.linger_timeout*1000)
+        except ZMQError as ex:
+            logging.warning("Exception when destroying context. %s", ex)
 
     async def _setup(self):
         # Setup one router for a party, this acts as a
@@ -106,7 +110,7 @@ class NodeCommunicator(object):
 
 
 class ProcessProgramRunner(object):
-    def __init__(self, peers_config, n, t, my_id, mpc_config={}, linger_timeout=2):
+    def __init__(self, peers_config, n, t, my_id, mpc_config={}, linger_timeout=5):
         self.peers_config = peers_config
         self.n = n
         self.t = t

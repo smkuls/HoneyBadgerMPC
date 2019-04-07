@@ -18,7 +18,7 @@ from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 # Uncomment this when you want logs from this file.
-logger.setLevel(logging.NOTSET)
+# logger.setLevel(logging.NOTSET)
 
 
 class HbAVSSMessageType:
@@ -249,7 +249,8 @@ class HbAvssBatch(HbAvss):
                 logging.error("PolyCommit verification failed.")
                 raise HoneyBadgerMPCError("PolyCommit verification failed.")
 
-        logger.info("[%d][%d] Verification time: %s", self.my_id, avss_id, time()-stime)
+        logger.info("[%d-%d][%d] Verification time: %s",
+                    self.my_id, dealer_id, avss_id, time()-stime)
         multicast(HbAVSSMessageType.OK)
 
         # Bracha-style agreement

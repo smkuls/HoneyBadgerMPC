@@ -1,4 +1,4 @@
-from pytest import mark, fixture
+from pytest import mark
 from pickle import dumps
 from random import shuffle
 from honeybadgermpc.avss_value_processor import AvssValueProcessor

@@ -6,7 +6,6 @@ from honeybadgermpc.protocols.commonsubset import run_common_subset
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 from honeybadgermpc.asyncio_wrapper import create_background_task
 from honeybadgermpc.sequencer import Sequencer
-from honeybadgermpc.exceptions import HoneyBadgerMPCError
 
 
 class AvssValueProcessor(object):
@@ -89,7 +88,7 @@ class AvssValueProcessor(object):
                     self.outputs_per_dealer[dealer_id][idx].set_result(avss_value)
 
     async def run_acs(self, acs_id):
-        sid = f"AVSS-ACS-{acs_id}"
+        sid = f"ACS-{acs_id}"
         logging.debug("[%d] Start ACS. Id: %s", self.my_id, sid)
         await self._run_acs_to_process_values(sid)
 

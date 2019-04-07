@@ -24,7 +24,8 @@ async def batch_beaver(context, a_, b_, x_, y_, z_):
     a, b, x, y = list(map(context.ShareArray, [a_, b_, x_, y_]))
 
     f, g = await asyncio.gather(*[(a - x).open(), (b - y).open()])
-    c = [(d*e).value + (d*q).v.value + (e*p).v.value + pq for (p, q, pq, d, e) in zip(x_, y_, z_, f, g)]
+    c = [(d*e).value + (d*q).v.value + (e*p).v.value +
+         pq for (p, q, pq, d, e) in zip(x_, y_, z_, f, g)]
     return c
 
 
@@ -45,17 +46,15 @@ async def refine_triples(context, a_dirty, b_dirty, c_dirty):
 
     assert len(a_dirty) == len(b_dirty) == len(c_dirty)
     m = len(a_dirty)
-    d = m // 2 if m & m-1 == 0 else 2**(m-2).bit_length()
-    zeroes = d - m
+    assert m >= context.N - context.t and m <= context.N
+    def nearest_power_of_two(x): return 2**(x-1).bit_length()   # Round up
+    d = nearest_power_of_two(m)
     omega = get_omega(context.field, 4*d, 2)
     a, b, c, x, y, z = rename_and_unpack_inputs(a_dirty, b_dirty, c_dirty, d, m)
     a_rest, b_rest, p, q = get_extrapolated_values(context.poly, a, b, d, omega)
     c_rest = await batch_beaver(context, a_rest, b_rest, x, y, z)
     c = list(itertools.chain(*zip(c, c_rest)))
-    c_all = context.poly.interp_extrap(c, omega)
-    pq = c_all[1::2]
-    num_valid_triples = d - context.t + 1 - zeroes
-    p_shares = map(context.Share, p[:num_valid_triples])
-    q_shares = map(context.Share, q[:num_valid_triples])
-    pq_shares = map(context.Share, pq[:num_valid_triples])
-    return p_shares, q_shares, pq_shares
+    c_all = context.poly.interp_extrap_cpp(c, omega)
+    w = m-context.t
+    pq = c_all[1:2*w:2]
+    return p[:w], q[:w], pq
