@@ -3,7 +3,8 @@ import asyncio
 from time import time
 from pickle import dumps, loads
 from honeybadgermpc.betterpairing import ZR
-from honeybadgermpc.polynomial import polynomials_over
+from honeybadgermpc.polynomial import polynomials_over, EvalPoint
+from honeybadgermpc.reed_solomon import FFTEncoder
 from honeybadgermpc.poly_commit import PolyCommit
 from honeybadgermpc.symmetric_crypto import SymmetricCrypto
 from honeybadgermpc.exceptions import HoneyBadgerMPCError
@@ -48,6 +49,8 @@ class HbAvss(object):
         self.output_queue = asyncio.Queue()
 
         self.field = ZR
+        self.eval_point = EvalPoint(self.field, n, use_fft=True)
+        self.omega = self.eval_point.omega
         self.poly = polynomials_over(self.field)
 
     def __enter__(self):
@@ -70,7 +73,8 @@ class HbAvssLight(HbAvss):
         shared_key = pow(ephemeral_public_key, self.private_key)
         share, witness = SymmetricCrypto.decrypt(
             str(shared_key).encode("utf-8"), encrypted_witnesses[self.my_id])
-        if self.poly_commit.verify_eval(commitments, self.my_id+1, share, witness):
+        point = pow(self.omega, self.my_id)
+        if self.poly_commit.verify_eval(commitments, point, share, witness):
             multicast(HbAVSSMessageType.OK)
         else:
             logging.error("PolyCommit verification failed.")
@@ -97,11 +101,13 @@ class HbAvssLight(HbAvss):
         ephemeral_secret_key = self.field.random()
         ephemeral_public_key = pow(self.g, ephemeral_secret_key)
         z = [None]*self.n
+        point = 1
         for i in range(self.n):
-            witness = self.poly_commit.create_witness(aux_poly, i+1)
+            witness = self.poly_commit.create_witness(aux_poly, point)
             shared_key = pow(self.public_keys[i], ephemeral_secret_key)
             z[i] = SymmetricCrypto.encrypt(
-                str(shared_key).encode("utf-8"), (int(phi(i+1)), int(witness)))
+                str(shared_key).encode("utf-8"), (int(phi(point)), int(witness)))
+            point *= self.omega
 
         return dumps((commitments, ephemeral_public_key, z))
 
@@ -200,6 +206,7 @@ class HbAvssBatch(HbAvss):
                                           private_key, g, h, n, t, my_id, send, recv)
         self.avid_msg_queue = asyncio.Queue()
         self.tasks = []
+        self.fft_encoder = FFTEncoder(self.eval_point)
 
     async def _recv_loop(self, q):
         while True:
@@ -226,8 +233,7 @@ class HbAvssBatch(HbAvss):
             for i in range(self.n):
                 send(i, msg)
 
-        commitments, ephemeral_public_key, encrypted_witnesses = loads(
-            dispersal_msg)
+        commitments, ephemeral_public_key, encrypted_witnesses = loads(dispersal_msg)
         secret_size = len(commitments)
 
         # all_encrypted_witnesses: n
@@ -240,13 +246,15 @@ class HbAvssBatch(HbAvss):
             shares[k], witnesses[k] = SymmetricCrypto.decrypt(
                 shared_key, encrypted_witnesses[k])
 
+        point = pow(self.omega, self.my_id)
         # verify & send all ok
         for i in range(secret_size):
             if not self.poly_commit.verify_eval(
-                    commitments[i], self.my_id+1, shares[i], witnesses[i]):
+                    commitments[i], point, shares[i], witnesses[i]):
                 # will be replaced by sending out IMPLICATE message later
                 # multicast(HbAVSSMessageType.IMPLICATE)
-                logging.error("PolyCommit verification failed.")
+                logging.error("[%d-%d][%d] PolyCommit verification failed. Point: %s",
+                              self.my_id, dealer_id, avss_id, point)
                 raise HoneyBadgerMPCError("PolyCommit verification failed.")
 
         logger.info("[%d-%d][%d] Verification time: %s",
@@ -287,9 +295,13 @@ class HbAvssBatch(HbAvss):
         aux_poly = [None] * secret_size
         # for k ∈ [t+1]
         #   Ck, auxk <- PolyCommit(SP,φ(·,k))
+        witnesses = [None]*secret_size
+        shares = [None]*secret_size
         for k in range(secret_size):
             phi[k] = self.poly.random(self.t, values[k])
             commitments[k], aux_poly[k] = self.poly_commit.commit(phi[k])
+            witnesses[k] = self.fft_encoder.encode(list(map(int, aux_poly[k])))
+            shares[k] = self.fft_encoder.encode(list(map(int, phi[k])))
 
         ephemeral_secret_key = self.field.random()
         ephemeral_public_key = pow(self.g, ephemeral_secret_key)
@@ -302,9 +314,8 @@ class HbAvssBatch(HbAvss):
                 pow(self.public_keys[i], ephemeral_secret_key)).encode()
             z = [None] * secret_size
             for k in range(secret_size):
-                witness = self.poly_commit.create_witness(aux_poly[k], i+1)
                 z[k] = SymmetricCrypto.encrypt(
-                    shared_key, (int(phi[k](i+1)), int(witness)))
+                    shared_key, (shares[k][i], witnesses[k][i]))
             dealer_msg_list[i] = dumps((commitments, ephemeral_public_key, z))
 
         return dealer_msg_list

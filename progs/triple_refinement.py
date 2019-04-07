@@ -49,7 +49,7 @@ async def refine_triples(context, a_dirty, b_dirty, c_dirty):
     assert m >= context.N - context.t and m <= context.N
     def nearest_power_of_two(x): return 2**(x-1).bit_length()   # Round up
     d = nearest_power_of_two(m)
-    omega = get_omega(context.field, 4*d, 2)
+    omega = get_omega(context.field, 4*d, 0)
     a, b, c, x, y, z = rename_and_unpack_inputs(a_dirty, b_dirty, c_dirty, d, m)
     a_rest, b_rest, p, q = get_extrapolated_values(context.poly, a, b, d, omega)
     c_rest = await batch_beaver(context, a_rest, b_rest, x, y, z)

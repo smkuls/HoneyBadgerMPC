@@ -8,6 +8,7 @@ from honeybadgermpc.field import GF
 from honeybadgermpc.elliptic_curve import Subgroup
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 from abc import ABC, abstractmethod
+from honeybadgermpc.asyncio_wrapper import create_background_task
 
 
 def get_avss_params(n, t, my_id):
@@ -54,9 +55,9 @@ class PreProcessingBase(ABC):
         avss_tasks = [None]*self.n
         for i in range(self.n):
             if i != self.my_id:
-                avss_tasks[i] = asyncio.create_task(
+                avss_tasks[i] = create_background_task(
                     self.avss_instance.avss(avss_id, dealer_id=i))
-        avss_tasks[self.my_id] = asyncio.create_task(
+        avss_tasks[self.my_id] = create_background_task(
             self.avss_instance.avss(avss_id, values=inputs, dealer_id=self.my_id))
         # TODO: WAITING HERE FOR ALL TASKS. ONLY FOR BENCHMARKING.
         await asyncio.gather(*avss_tasks)

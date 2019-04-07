@@ -468,6 +468,8 @@ class GT:
 
 
 class ZR:
+    modulus = bls12_381_r  # Hack to keep this similar to field.py
+
     def __init__(self, val=None):
         self.pp = []
         if val is None:
@@ -487,6 +489,7 @@ class ZR:
                 self.val = PyFr(val)
         elif type(val) is PyFr:
             self.val = val
+        self.value = self.__int__()  # Hack to keep this similar to field.py
 
     def __str__(self):
         hexstr = self.val.__str__()[3:-1]

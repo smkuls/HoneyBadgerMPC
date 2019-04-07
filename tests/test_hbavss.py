@@ -1,7 +1,7 @@
 from pytest import mark
 from random import randint
 from contextlib import ExitStack
-from honeybadgermpc.polynomial import polynomials_over
+from honeybadgermpc.polynomial import polynomials_over, EvalPoint
 from honeybadgermpc.betterpairing import G1, ZR
 from honeybadgermpc.hbavss import HbAvssLight, HbAvssBatch
 from honeybadgermpc.mpc import TaskProgramRunner
@@ -39,7 +39,9 @@ async def test_hbavss_light(test_router):
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
         shares = await asyncio.gather(*avss_tasks)
 
-    assert polynomials_over(ZR).interpolate_at(zip(range(1, n+1), shares)) == value
+    point = EvalPoint(ZR, n, True)
+    points = [int(pow(point.omega, i)) for i in range(n)]
+    assert polynomials_over(ZR).interpolate_at(zip(points, shares)) == value
 
 
 @mark.asyncio
@@ -64,11 +66,12 @@ async def test_hbavss_batch(test_router):
                 avss_tasks[i] = asyncio.create_task(hbavss.avss(0, dealer_id=dealer_id))
         shares = await asyncio.gather(*avss_tasks)
 
-    fliped_shares = list(map(list, zip(*shares)))
+    flipped_shares = list(map(list, zip(*shares)))
     recovered_values = []
-    for item in fliped_shares:
+    point = EvalPoint(ZR, n, True)
+    for item in flipped_shares:
         recovered_values.append(polynomials_over(
-            ZR).interpolate_at(zip(range(1, n+1), item)))
+            ZR).interpolate_at(zip([pow(point.omega, i) for i in range(n)], item)))
 
     assert recovered_values == values
 
@@ -100,7 +103,9 @@ async def test_hbavss_light_client_mode(test_router):
         # Ignore the result from the dealer
         shares = (await asyncio.gather(*avss_tasks))[:-1]
 
-    assert polynomials_over(ZR).interpolate_at(zip(range(1, n+1), shares)) == value
+    point = EvalPoint(ZR, n, True)
+    points = [int(pow(point.omega, i)) for i in range(n)]
+    assert polynomials_over(ZR).interpolate_at(zip(points, shares)) == value
 
 
 @mark.asyncio

@@ -1,5 +1,4 @@
 import operator
-import random
 import logging
 from functools import reduce
 from .field import GF, GFElement
@@ -242,9 +241,7 @@ def get_omega(field, n, seed=None):
     This only makes sense if n is a power of 2!
     """
     assert n & n-1 == 0, "n must be a power of 2"
-    if seed is not None:
-        random.seed(seed)
-    x = field.random()
+    x = field.random(seed)
     y = pow(x, (field.modulus-1)//n)
     if y == 1 or pow(y, n//2) == 1:
         return get_omega(field, n)
