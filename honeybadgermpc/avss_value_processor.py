@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from pickle import dumps, loads
 from collections import defaultdict
 from honeybadgermpc.protocols.commonsubset import run_common_subset
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
@@ -92,7 +91,7 @@ class AvssValueProcessor(object):
         logging.debug("[%d] Start ACS. Id: %s", self.my_id, sid)
         await self._run_acs_to_process_values(sid)
 
-    def _process_acs_output(self, pickled_acs_outputs):
+    def _process_acs_output(self, serialized_acs_outputs):
         # Do a transpose of the AVSS counts from each party.
         #
         # acs_outputs[i][j] -> Represents the number of AVSSed
@@ -111,9 +110,10 @@ class AvssValueProcessor(object):
         # any new values.
         acs_outputs = [None]*self.n
         default_acs_output = [len(self.outputs_per_dealer[j]) for j in range(self.n)]
-        for i, pickled_acs_output in enumerate(pickled_acs_outputs):
-            if pickled_acs_output is not None:
-                acs_outputs[i] = loads(pickled_acs_output)
+        for i, serialized_acs_output in enumerate(serialized_acs_outputs):
+            if serialized_acs_output is not None:
+                output = serialized_acs_output.decode()
+                acs_outputs[i] = list(map(int, output.split(",")))
             else:
                 acs_outputs[i] = default_acs_output[::]
 
@@ -207,9 +207,10 @@ class AvssValueProcessor(object):
     async def _run_acs_to_process_values(self, sid):
         # Get a count of all values which have been received
         # until now from all the other participating nodes.
-        value_counts_per_dealer = [len(self.inputs_per_dealer[i]) for i in range(self.n)]
+        value_counts_per_dealer = [str(len(self.inputs_per_dealer[i]))
+                                   for i in range(self.n)]
 
-        acs_input = dumps(value_counts_per_dealer)
+        acs_input = ",".join(value_counts_per_dealer).encode()
         logging.debug("[%d] ACS [%s] Input:%s", self.my_id, sid, value_counts_per_dealer)
 
         send, recv = self.get_send_recv(sid)

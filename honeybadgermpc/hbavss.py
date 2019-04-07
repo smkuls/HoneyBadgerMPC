@@ -101,7 +101,7 @@ class HbAvssLight(HbAvss):
             witness = self.poly_commit.create_witness(aux_poly, i+1)
             shared_key = pow(self.public_keys[i], ephemeral_secret_key)
             z[i] = SymmetricCrypto.encrypt(
-                str(shared_key).encode("utf-8"), (phi(i+1), witness))
+                str(shared_key).encode("utf-8"), (int(phi(i+1)), int(witness)))
 
         return dumps((commitments, ephemeral_public_key, z))
 
@@ -231,14 +231,14 @@ class HbAvssBatch(HbAvss):
         secret_size = len(commitments)
 
         # all_encrypted_witnesses: n
-        shared_key = pow(ephemeral_public_key, self.private_key)
+        shared_key = str(pow(ephemeral_public_key, self.private_key)).encode()
 
         shares = [None] * secret_size
         witnesses = [None] * secret_size
         # Decrypt
         for k in range(secret_size):
             shares[k], witnesses[k] = SymmetricCrypto.decrypt(
-                str(shared_key).encode("utf-8"), encrypted_witnesses[k])
+                shared_key, encrypted_witnesses[k])
 
         # verify & send all ok
         for i in range(secret_size):
@@ -298,12 +298,13 @@ class HbAvssBatch(HbAvss):
         #   2. z[i][k] <- EncPKi(φ(i,k), w[i][k])
         dealer_msg_list = [None] * self.n
         for i in range(self.n):
-            shared_key = pow(self.public_keys[i], ephemeral_secret_key)
+            shared_key = str(
+                pow(self.public_keys[i], ephemeral_secret_key)).encode()
             z = [None] * secret_size
             for k in range(secret_size):
                 witness = self.poly_commit.create_witness(aux_poly[k], i+1)
                 z[k] = SymmetricCrypto.encrypt(
-                    str(shared_key).encode("utf-8"), (phi[k](i+1), witness))
+                    shared_key, (int(phi[k](i+1)), int(witness)))
             dealer_msg_list[i] = dumps((commitments, ephemeral_public_key, z))
 
         return dealer_msg_list

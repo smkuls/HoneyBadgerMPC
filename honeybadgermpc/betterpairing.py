@@ -51,9 +51,7 @@ class G1:
             self.pyg1 = other
 
     def __str__(self):
-        x = int(self.pyg1.__str__()[4:102], 0)
-        y = int(self.pyg1.__str__()[108:206], 0)
-        return "(" + str(x) + ", " + str(y) + ")"
+        return self.pyg1.__str__()
 
     def __repr__(self):
         return str(self)

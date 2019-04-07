@@ -1,9 +1,12 @@
 import asyncio
 from pytest import mark
 from contextlib import ExitStack
-from pickle import dumps
 from honeybadgermpc.avss_value_processor import AvssValueProcessor
 from honeybadgermpc.protocols.crypto.boldyreva import dealer
+
+
+def dumps(array):
+    return ",".join(map(str, array)).encode()
 
 
 @mark.asyncio

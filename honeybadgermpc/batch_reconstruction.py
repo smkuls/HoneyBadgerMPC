@@ -5,7 +5,6 @@ import logging
 from collections import defaultdict
 from asyncio import Queue
 from math import ceil
-import time
 from .reed_solomon import Algorithm, EncoderFactory, DecoderFactory, RobustDecoderFactory
 from .reed_solomon import IncrementalDecoder
 from honeybadgermpc.asyncio_wrapper import create_background_task
@@ -158,7 +157,7 @@ async def batch_reconstruct(secret_shares, p, t, n, myid, send, recv, config=Non
     robust_dec = RobustDecoderFactory.get(t, point, algorithm=decoding_algorithm)
 
     # Step 1: Compute the polynomial, then send
-    start_time = time.time()
+    # start_time = time.time()
     encoded = enc.encode(round1_chunks)
     to_send = list_transpose(encoded)
     for j in range(n):
@@ -167,7 +166,7 @@ async def batch_reconstruct(secret_shares, p, t, n, myid, send, recv, config=Non
     # bench_logger.info(f"[BatchReconstruct] P1 Send: {end_time - start_time}")
 
     # Step 2: Attempt to reconstruct P1
-    start_time = time.time()
+    # start_time = time.time()
     recons_r2 = await incremental_decode(data_r1, enc, dec, robust_dec,
                                          num_chunks, t, n)
     if recons_r2 is None:
