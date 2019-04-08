@@ -11,6 +11,7 @@ from honeybadgermpc.mpc import Mpc
 from honeybadgermpc.config import HbmpcConfig, ConfigVars
 from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 from honeybadgermpc.asyncio_wrapper import create_background_task
+from honeybadgermpc.executor import executor
 
 
 class NodeCommunicator(object):
@@ -160,6 +161,7 @@ class ProcessProgramRunner(object):
         logging.debug("NodeCommunicator closed.")
         self.subscribe_task.cancel()
         logging.debug("Subscribe task cancelled.")
+        executor.shutdown()
 
 
 async def verify_all_connections(peers, n, my_id):

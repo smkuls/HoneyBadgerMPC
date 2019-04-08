@@ -2,6 +2,7 @@ import logging
 import asyncio
 from time import time
 from pickle import dumps, loads
+from itertools import repeat, chain
 from honeybadgermpc.betterpairing import ZR
 from honeybadgermpc.polynomial import polynomials_over, EvalPoint
 from honeybadgermpc.reed_solomon import FFTEncoder
@@ -11,15 +12,16 @@ from honeybadgermpc.exceptions import HoneyBadgerMPCError
 from honeybadgermpc.protocols.reliablebroadcast import reliablebroadcast
 from honeybadgermpc.protocols.avid import AVID
 from honeybadgermpc.asyncio_wrapper import create_background_task
+from honeybadgermpc.executor import executor
+from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 
 # TODO: Move these to a separate file instead of using it from batch_reconstruction.py
-from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 # Uncomment this when you want logs from this file.
-# logger.setLevel(logging.NOTSET)
+logger.setLevel(logging.NOTSET)
 
 
 class HbAVSSMessageType:
@@ -240,17 +242,16 @@ class HbAvssBatch(HbAvss):
         shared_key = str(pow(ephemeral_public_key, self.private_key)).encode()
 
         shares = [None] * secret_size
-        witnesses = [None] * secret_size
         # Decrypt
-        for k in range(secret_size):
-            shares[k], witnesses[k] = SymmetricCrypto.decrypt(
-                shared_key, encrypted_witnesses[k])
+        decrypt_args = (repeat(shared_key, secret_size), encrypted_witnesses)
+        shares, witnesses = list(
+            zip(*executor.map(SymmetricCrypto.decrypt, *decrypt_args)))
 
         point = pow(self.omega, self.my_id)
         # verify & send all ok
-        for i in range(secret_size):
-            if not self.poly_commit.verify_eval(
-                    commitments[i], point, shares[i], witnesses[i]):
+        verify_args = (commitments, repeat(point, secret_size), shares, witnesses)
+        for verified in executor.map(self.poly_commit.verify_eval, *verify_args):
+            if not verified:
                 # will be replaced by sending out IMPLICATE message later
                 # multicast(HbAVSSMessageType.IMPLICATE)
                 logging.error("[%d-%d][%d] PolyCommit verification failed. Point: %s",
@@ -290,33 +291,33 @@ class HbAvssBatch(HbAvss):
         # Sample a random degree-(t,t) bivariate polynomial φ(·,·)
         # such that each φ(0,k) = sk and φ(i,k) is Pi’s share of sk
         secret_size = len(values)
-        phi = [None] * secret_size
-        commitments = [None] * secret_size
-        aux_poly = [None] * secret_size
+        phi = [self.poly.random(self.t, values[k]) for k in range(secret_size)]
+
         # for k ∈ [t+1]
         #   Ck, auxk <- PolyCommit(SP,φ(·,k))
-        witnesses = [None]*secret_size
-        shares = [None]*secret_size
-        for k in range(secret_size):
-            phi[k] = self.poly.random(self.t, values[k])
-            commitments[k], aux_poly[k] = self.poly_commit.commit(phi[k])
-            witnesses[k] = self.fft_encoder.encode(list(map(int, aux_poly[k])))
-            shares[k] = self.fft_encoder.encode(list(map(int, phi[k])))
+        commitments, aux_poly = zip(*executor.map(self.poly_commit.commit, phi))
+
+        witnesses = chain.from_iterable(zip(*executor.map(
+            self.fft_encoder.encode, (list(map(int, i)) for i in aux_poly))))
+
+        shares = chain.from_iterable(zip(*executor.map(
+            self.fft_encoder.encode, (list(map(int, i)) for i in phi))))
 
         ephemeral_secret_key = self.field.random()
         ephemeral_public_key = pow(self.g, ephemeral_secret_key)
         # for each party Pi and each k ∈ [t+1]
         #   1. w[i][k] <- CreateWitnesss(Ck,auxk,i)
         #   2. z[i][k] <- EncPKi(φ(i,k), w[i][k])
-        dealer_msg_list = [None] * self.n
-        for i in range(self.n):
-            shared_key = str(
-                pow(self.public_keys[i], ephemeral_secret_key)).encode()
-            z = [None] * secret_size
-            for k in range(secret_size):
-                z[k] = SymmetricCrypto.encrypt(
-                    shared_key, (shares[k][i], witnesses[k][i]))
-            dealer_msg_list[i] = dumps((commitments, ephemeral_public_key, z))
+        def get_key(x, y): return str(pow(x, y)).encode()
+        key_args = (self.public_keys, repeat(ephemeral_secret_key, self.n))
+        shared_keys = chain.from_iterable(
+            repeat(i, secret_size) for i in executor.map(get_key, *key_args))
+
+        encrypt_args = (shared_keys, zip(shares, witnesses))
+        z = list(executor.map(SymmetricCrypto.encrypt, *encrypt_args))
+
+        dealer_msg_list = [dumps((commitments, ephemeral_public_key, z[i:i+secret_size]))
+                           for i in range(0, len(z), secret_size)]
 
         return dealer_msg_list
 
