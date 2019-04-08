@@ -21,215 +21,225 @@ def strip_trailing_zeros(a):
 _poly_cache = {}
 
 
+class PolyCache(object):
+    _poly_cache = {}
+
+    def __new__(cls, field):
+        return PolyCache._poly_cache.setdefault(
+            field, super(PolyCache, cls).__new__(cls))
+
+    def __init__(self, field):
+        self.field = field
+        self._lagrange_cache = {}  # Cache lagrange polynomials
+        self.field_type = GFElement if type(field) is GF else ZR
+
+    def __call__(self, coefficients):
+        return Polynomial(coefficients, self)
+
+    def __reduce__(self):
+        return (PolyCache, (self.field,))
+
+    def interpolate_at(self, shares, x_recomb=None):
+        x_recomb = x_recomb if x_recomb is not None else self.field(0)
+        # shares are in the form (x, y=f(x))
+        if type(x_recomb) is int:
+            x_recomb = field(x_recomb)
+        assert type(x_recomb) is self.field_type
+        xs, ys = zip(*shares)
+        vector = []
+        for i, x_i in enumerate(xs):
+            factors = [(x_k - x_recomb) / (x_k - x_i)
+                       for k, x_k in enumerate(xs) if k != i]
+            vector.append(reduce(operator.mul, factors))
+        return sum(map(operator.mul, ys, vector))
+
+    def interpolate(self, shares):
+        # This is the polynomial f(x) = x
+        x = Polynomial([self.field(0), self.field(1)], self)
+        one = Polynomial([self.field(1)], self)  # This is the polynomial f(x) = 1
+        xs, ys = zip(*shares)
+
+        def lagrange(xi):
+            # Let's cache lagrange values
+            if (xs, xi) in self._lagrange_cache:
+                return self._lagrange_cache[(xs, xi)]
+
+            def mul(a, b): return a*b
+            num = reduce(mul, [x - Polynomial([xj], self)
+                               for xj in xs if xj != xi], one)
+            den = reduce(mul, [xi - xj for xj in xs if xj != xi], self.field(1))
+            p = num * Polynomial([1 / den], self)
+            self._lagrange_cache[(xs, xi)] = p
+            return p
+        f = Polynomial([0], self)
+        for xi, yi in zip(xs, ys):
+            pi = lagrange(xi)
+            f += Polynomial([yi], self) * pi
+        return f
+
+    def interpolate_fft(self, ys, omega):
+        """
+        Returns a polynoial f of given degree,
+        such that f(omega^i) == ys[i]
+        """
+        n = len(ys)
+        assert n & (n-1) == 0, "n must be power of two"
+        assert type(omega) is self.field_type
+        assert omega ** n == 1, "must be an n'th root of unity"
+        assert omega ** (n //
+                         2) != 1, "must be a primitive n'th root of unity"
+        coeffs = [b/n for b in fft_helper(ys, 1/omega, self.field)]
+        return Polynomial(coeffs, self)
+
+    def random(self, degree, y0=None):
+        coeffs = [self.field.random() for _ in range(degree+1)]
+        if y0 is not None:
+            if type(y0) is int:
+                y0 = self.field(y0)
+            assert type(y0) is self.field_type
+            coeffs[0] = y0
+        return Polynomial(coeffs, self)
+
+    def interp_extrap(self, xs, omega):
+        """
+        Interpolates the polynomial based on the even points omega^2i
+        then evaluates at all points omega^i
+        """
+        n = len(xs)
+        assert n & (n-1) == 0, "n must be power of 2"
+        assert pow(omega, 2*n) == 1, "omega must be 2n'th root of unity"
+        assert pow(
+            omega, n) != 1, "omega must be primitive 2n'th root of unity"
+
+        # Interpolate the polynomial up to degree n
+        poly = self.interpolate_fft(xs, omega**2)
+
+        # Evaluate the polynomial
+        xs2 = poly.evaluate_fft(omega, 2*n)
+
+        return xs2
+
+    def interp_extrap_cpp(self, xs, omega):
+        """
+        Interpolates the polynomial based on the even points omega^2i
+        then evaluates at all points omega^i using C++ FFT routines.
+        """
+        n = len(xs)
+        assert n & (n-1) == 0, "n must be power of 2"
+        assert pow(omega, 2*n) == 1, "omega must be 2n'th root of unity"
+        assert pow(omega, n) != 1, "omega must be primitive 2n'th root of unity"
+        p = omega.modulus
+
+        # Interpolate the polynomial up to degree n
+        poly = fft_interpolate_cpp(list(range(n)), xs, (pow(omega, 2)).value, p, n)
+
+        # Evaluate the polynomial
+        xs2 = fft_cpp(poly, omega.value, p, 2*n)
+
+        return xs2
+
+
+class Polynomial(object):
+    def __init__(self, coeffs, poly_cache):
+        self.coeffs = list(strip_trailing_zeros(coeffs))
+        self.poly_cache = poly_cache
+        self.field = poly_cache.field
+        for i in range(len(self.coeffs)):
+            if type(self.coeffs[i]) is int:
+                self.coeffs[i] = self.field(self.coeffs[i])
+            assert type(self.coeffs[i]) is self.poly_cache.field_type
+
+    def is_zero(self):
+        return self.coeffs == [] or (len(self.coeffs) == 1 and self.coeffs[0] == 0)
+
+    def __repr__(self):
+        if self.is_zero():
+            return '0'
+        return ' + '.join(['%s x^%d' % (a, i) if i > 0 else '%s' % a
+                           for i, a in enumerate(self.coeffs)])
+
+    def __call__(self, x):
+        y = self.field(0)
+        xx = self.field(1)
+        for coeff in self.coeffs:
+            y += coeff * xx
+            xx *= x
+        return y
+
+    def evaluate_fft(self, omega, n):
+        assert n & (n-1) == 0, "n must be power of two"
+        assert type(omega) is self.poly_cache.field_type
+        assert omega ** n == 1, "must be an n'th root of unity"
+        assert omega ** (n //
+                         2) != 1, "must be a primitive n'th root of unity"
+        return fft(self, omega, n)
+
+    # the valuation only gives 0 to the zero polynomial, i.e. 1+degree
+    def __abs__(self): return len(self.coeffs)
+
+    def __iter__(self): return iter(self.coeffs)
+
+    def __sub__(self, other): return self + (-other)
+
+    def __neg__(self): return Polynomial([-a for a in self], self.poly_cache)
+
+    def __len__(self): return len(self.coeffs)
+
+    def __add__(self, other):
+        new_coefficients = [sum(x) for x in zip_longest(
+            self, other, fillvalue=self.field(0))]
+        return Polynomial(new_coefficients, self.poly_cache)
+
+    def __mul__(self, other):
+        if self.is_zero() or other.is_zero():
+            return self.zero()
+
+        new_coeffs = [self.field(0)
+                      for _ in range(len(self) + len(other) - 1)]
+
+        for i, a in enumerate(self):
+            for j, b in enumerate(other):
+                new_coeffs[i+j] += a*b
+        return Polynomial(new_coeffs, self.poly_cache)
+
+    def degree(self): return abs(self) - 1
+
+    def leading_coefficient(self): return self.coeffs[-1]
+
+    def __divmod__(self, divisor):
+        quotient, remainder = self.zero(), self
+        divisor_deg = divisor.degree()
+        divisor_lc = divisor.leading_coefficient()
+
+        while remainder.degree() >= divisor_deg:
+            monomial_exponent = remainder.degree() - divisor_deg
+            monomial_zeros = [self.field(0)
+                              for _ in range(monomial_exponent)]
+            monomial_divisor = Polynomial(
+                monomial_zeros + [remainder.leading_coefficient() / divisor_lc],
+                self.poly_cache)
+
+            quotient += monomial_divisor
+            remainder -= monomial_divisor * divisor
+
+        return quotient, remainder
+
+    def __truediv__(self, divisor):
+        if divisor.isZero():
+            raise ZeroDivisionError
+        return divmod(self, divisor)[0]
+
+    def __mod__(self, divisor):
+        if divisor.isZero():
+            raise ZeroDivisionError
+        return divmod(self, divisor)[1]
+
+    def zero(self):
+        return Polynomial([], self.poly_cache)
+
+
 def polynomials_over(field):
-    assert type(field) is GF or field == ZR
-    field_type = GFElement if type(field) is GF else ZR
-    if field in _poly_cache:
-        return _poly_cache[field]
-
-    class Polynomial(object):
-        def __init__(self, coeffs):
-            self.coeffs = list(strip_trailing_zeros(coeffs))
-            for i in range(len(self.coeffs)):
-                if type(self.coeffs[i]) is int:
-                    self.coeffs[i] = field(self.coeffs[i])
-                assert type(self.coeffs[i]) is field_type
-            self.field = field
-
-        def is_zero(self):
-            return self.coeffs == [] or (len(self.coeffs) == 1 and self.coeffs[0] == 0)
-
-        def __repr__(self):
-            if self.is_zero():
-                return '0'
-            return ' + '.join(['%s x^%d' % (a, i) if i > 0 else '%s' % a
-                               for i, a in enumerate(self.coeffs)])
-
-        def __call__(self, x):
-            y = field(0)
-            xx = field(1)
-            for coeff in self.coeffs:
-                y += coeff * xx
-                xx *= x
-            return y
-
-        @classmethod
-        def interpolate_at(cls, shares, x_recomb=field(0)):
-            # shares are in the form (x, y=f(x))
-            if type(x_recomb) is int:
-                x_recomb = field(x_recomb)
-            assert type(x_recomb) is field_type
-            xs, ys = zip(*shares)
-            vector = []
-            for i, x_i in enumerate(xs):
-                factors = [(x_k - x_recomb) / (x_k - x_i)
-                           for k, x_k in enumerate(xs) if k != i]
-                vector.append(reduce(operator.mul, factors))
-            return sum(map(operator.mul, ys, vector))
-
-        _lagrange_cache = {}  # Cache lagrange polynomials
-
-        @classmethod
-        def interpolate(cls, shares):
-            x = cls([field(0), field(1)])  # This is the polynomial f(x) = x
-            one = cls([field(1)])  # This is the polynomial f(x) = 1
-            xs, ys = zip(*shares)
-
-            def lagrange(xi):
-                # Let's cache lagrange values
-                if (xs, xi) in cls._lagrange_cache:
-                    return cls._lagrange_cache[(xs, xi)]
-
-                def mul(a, b): return a*b
-                num = reduce(mul, [x - cls([xj])
-                                   for xj in xs if xj != xi], one)
-                den = reduce(mul, [xi - xj for xj in xs if xj != xi], field(1))
-                p = num * cls([1 / den])
-                cls._lagrange_cache[(xs, xi)] = p
-                return p
-            f = cls([0])
-            for xi, yi in zip(xs, ys):
-                pi = lagrange(xi)
-                f += cls([yi]) * pi
-            return f
-
-        @classmethod
-        def interpolate_fft(cls, ys, omega):
-            """
-            Returns a polynoial f of given degree,
-            such that f(omega^i) == ys[i]
-            """
-            n = len(ys)
-            assert n & (n-1) == 0, "n must be power of two"
-            assert type(omega) is field_type
-            assert omega ** n == 1, "must be an n'th root of unity"
-            assert omega ** (n //
-                             2) != 1, "must be a primitive n'th root of unity"
-            coeffs = [b/n for b in fft_helper(ys, 1/omega, field)]
-            return cls(coeffs)
-
-        def evaluate_fft(self, omega, n):
-            assert n & (n-1) == 0, "n must be power of two"
-            assert type(omega) is field_type
-            assert omega ** n == 1, "must be an n'th root of unity"
-            assert omega ** (n //
-                             2) != 1, "must be a primitive n'th root of unity"
-            return fft(self, omega, n)
-
-        @classmethod
-        def random(cls, degree, y0=None):
-            coeffs = [field.random() for _ in range(degree+1)]
-            if y0 is not None:
-                if type(y0) is int:
-                    y0 = field(y0)
-                assert type(y0) is field_type
-                coeffs[0] = y0
-            return cls(coeffs)
-
-        @classmethod
-        def interp_extrap(cls, xs, omega):
-            """
-            Interpolates the polynomial based on the even points omega^2i
-            then evaluates at all points omega^i
-            """
-            n = len(xs)
-            assert n & (n-1) == 0, "n must be power of 2"
-            assert pow(omega, 2*n) == 1, "omega must be 2n'th root of unity"
-            assert pow(
-                omega, n) != 1, "omega must be primitive 2n'th root of unity"
-
-            # Interpolate the polynomial up to degree n
-            poly = cls.interpolate_fft(xs, omega**2)
-
-            # Evaluate the polynomial
-            xs2 = poly.evaluate_fft(omega, 2*n)
-
-            return xs2
-
-        @classmethod
-        def interp_extrap_cpp(cls, xs, omega):
-            """
-            Interpolates the polynomial based on the even points omega^2i
-            then evaluates at all points omega^i using C++ FFT routines.
-            """
-            n = len(xs)
-            assert n & (n-1) == 0, "n must be power of 2"
-            assert pow(omega, 2*n) == 1, "omega must be 2n'th root of unity"
-            assert pow(omega, n) != 1, "omega must be primitive 2n'th root of unity"
-            p = omega.modulus
-
-            # Interpolate the polynomial up to degree n
-            poly = fft_interpolate_cpp(list(range(n)), xs, (pow(omega, 2)).value, p, n)
-
-            # Evaluate the polynomial
-            xs2 = fft_cpp(poly, omega.value, p, 2*n)
-
-            return xs2
-
-        # the valuation only gives 0 to the zero polynomial, i.e. 1+degree
-        def __abs__(self): return len(self.coeffs)
-
-        def __iter__(self): return iter(self.coeffs)
-
-        def __sub__(self, other): return self + (-other)
-
-        def __neg__(self): return Polynomial([-a for a in self])
-
-        def __len__(self): return len(self.coeffs)
-
-        def __add__(self, other):
-            new_coefficients = [sum(x) for x in zip_longest(
-                self, other, fillvalue=self.field(0))]
-            return Polynomial(new_coefficients)
-
-        def __mul__(self, other):
-            if self.is_zero() or other.is_zero():
-                return zero()
-
-            new_coeffs = [self.field(0)
-                          for _ in range(len(self) + len(other) - 1)]
-
-            for i, a in enumerate(self):
-                for j, b in enumerate(other):
-                    new_coeffs[i+j] += a*b
-            return Polynomial(new_coeffs)
-
-        def degree(self): return abs(self) - 1
-
-        def leading_coefficient(self): return self.coeffs[-1]
-
-        def __divmod__(self, divisor):
-            quotient, remainder = zero(), self
-            divisor_deg = divisor.degree()
-            divisor_lc = divisor.leading_coefficient()
-
-            while remainder.degree() >= divisor_deg:
-                monomial_exponent = remainder.degree() - divisor_deg
-                monomial_zeros = [self.field(0)
-                                  for _ in range(monomial_exponent)]
-                monomial_divisor = Polynomial(
-                    monomial_zeros + [remainder.leading_coefficient() / divisor_lc])
-
-                quotient += monomial_divisor
-                remainder -= monomial_divisor * divisor
-
-            return quotient, remainder
-
-        def __truediv__(self, divisor):
-            if divisor.isZero():
-                raise ZeroDivisionError
-            return divmod(self, divisor)[0]
-
-        def __mod__(self, divisor):
-            if divisor.isZero():
-                raise ZeroDivisionError
-            return divmod(self, divisor)[1]
-
-    def zero():
-        return Polynomial([])
-
-    _poly_cache[field] = Polynomial
-    return Polynomial
+    return PolyCache(field)
 
 
 def get_omega(field, n, seed=None):

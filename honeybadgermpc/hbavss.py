@@ -308,7 +308,6 @@ class HbAvssBatch(HbAvss):
         # for each party Pi and each k ∈ [t+1]
         #   1. w[i][k] <- CreateWitnesss(Ck,auxk,i)
         #   2. z[i][k] <- EncPKi(φ(i,k), w[i][k])
-        def get_key(x, y): return str(pow(x, y)).encode()
         key_args = (self.public_keys, repeat(ephemeral_secret_key, self.n))
         shared_keys = chain.from_iterable(
             repeat(i, secret_size) for i in executor.map(get_key, *key_args))
@@ -370,3 +369,9 @@ class HbAvssBatch(HbAvss):
         share = await self._process_avss_msg(avss_id, dealer_id, avss_msg)
         logger.debug("[%d] Batch AVSS [%s] completed.", self.my_id, avss_id)
         return share
+
+
+# This is needed to be defined at the global
+# scope for ProcessPoolExecutor to pickle this.
+def get_key(x, y):
+    return str(pow(x, y)).encode()

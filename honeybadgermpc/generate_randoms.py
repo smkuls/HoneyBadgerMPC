@@ -26,8 +26,9 @@ class RandomGenerator(PreProcessingBase):
 
 
 async def get_randoms(n, t, my_id, send, recv):
-    iterations = 4
-    b = 2**9
+    iterations = HbmpcConfig.extras.get("iterations", 3)
+    b = HbmpcConfig.extras.get("b", 2**10)
+    logging.info("ITERATIONS: %d, AVSS BATCH SIZE: %d", iterations, b)
     e = iterations*b*(n-t)
     k = (iterations)*b*(n-t)
     randoms = [None]*k

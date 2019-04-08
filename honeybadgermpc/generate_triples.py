@@ -32,8 +32,9 @@ class TripleGenerator(PreProcessingBase):
 
 
 async def get_triples(n, t, my_id, send, recv):
-    iterations = 4
-    b = 2**8
+    iterations = HbmpcConfig.extras.get("iterations", 3)
+    b = HbmpcConfig.extras.get("b", 2**10)
+    logging.info("ITERATIONS: %d, AVSS BATCH SIZE: %d", iterations, b)
     c = 0
     e = iterations*b*n
     stime = time()

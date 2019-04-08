@@ -1,4 +1,9 @@
-from concurrent.futures import ThreadPoolExecutor
+import logging
+from concurrent.futures import ProcessPoolExecutor
 from psutil import cpu_count
+from honeybadgermpc.config import HbmpcConfig
 
-executor = ThreadPoolExecutor(max_workers=cpu_count())
+
+num_workers = HbmpcConfig.extras.get("pc", cpu_count())
+logging.info("PROCESS POOL EXECUTOR MAX WORKERS: %d", num_workers)
+executor = ProcessPoolExecutor(max_workers=num_workers)
