@@ -699,14 +699,8 @@ class ZR:
 
     @staticmethod
     def random(seed=None):
-        r = bls12_381_r
-        if seed is None:
-            r = random.SystemRandom().randint(0, r-1)
-            return ZR(str(r))
-        else:
-            # Generate pseudorandomly based on seed
-            r = random.Random(seed).randint(0, r-1)
-            return ZR(str(r))
+        r = random.Random(seed).randint(0, bls12_381_r-1)
+        return ZR(str(r))
 
     @staticmethod
     def zero():

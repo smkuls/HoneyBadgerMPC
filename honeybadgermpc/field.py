@@ -107,7 +107,6 @@ class GF(object):
         return GF._field_cache.setdefault(modulus, super(GF, cls).__new__(cls))
 
     def __init__(self, modulus):
-        self._random = Random()
         if not is_prime(mpz(modulus)):
             raise ValueError(f"{modulus} is not a prime")
 
@@ -120,8 +119,7 @@ class GF(object):
         return (GF, (self.modulus,))
 
     def random(self, seed=None):
-        self._random.seed(seed)
-        return GFElement(self._random.randint(0, self.modulus-1), self)
+        return GFElement(Random(seed).randint(0, self.modulus-1), self)
 
 
 class GFElement(FieldElement):
