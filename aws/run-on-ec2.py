@@ -236,10 +236,10 @@ def trigger_run(run_id, skip_setup, max_k, only_setup, cleanup):
                            "linger_timeout_in_seconds": 10})
     elif AwsConfig.MPC_CONFIG.COMMAND.endswith("generate_triples"):
         instance_configs = get_instance_configs(
-            instance_ips, {"k": AwsConfig.MPC_CONFIG.K})
+            instance_ips, {"b": 2**10, "pc": 8, "iterations": 3, "type": "THREAD"})
     elif AwsConfig.MPC_CONFIG.COMMAND.endswith("generate_randoms"):
         instance_configs = get_instance_configs(
-            instance_ips, {"k": AwsConfig.MPC_CONFIG.K})
+            instance_ips, {"b": 2**10, "pc": 8, "iterations": 3, "type": "THREAD"})
     else:
         logging.error("Application not supported to run on AWS.")
         raise SystemError

@@ -21,7 +21,7 @@ from honeybadgermpc.batch_reconstruction import subscribe_recv, wrap_send
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 # Uncomment this when you want logs from this file.
-logger.setLevel(logging.NOTSET)
+# logger.setLevel(logging.NOTSET)
 
 
 class HbAVSSMessageType:

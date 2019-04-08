@@ -28,35 +28,39 @@ class RandomGenerator(PreProcessingBase):
 async def get_randoms(n, t, my_id, send, recv):
     iterations = HbmpcConfig.extras.get("iterations", 3)
     b = HbmpcConfig.extras.get("b", 2**10)
-    logging.info("ITERATIONS: %d, AVSS BATCH SIZE: %d", iterations, b)
+    logging.info("[RANDOM GENERATION] N: %d, T: %d, ITERATIONS: %d, AVSS BATCH SIZE: %d",
+                 n, t, iterations, b)
     e = iterations*b*(n-t)
     k = (iterations)*b*(n-t)
     randoms = [None]*k
-    stime = time()
+    start_time = time()
     async with RandomGenerator(n, t, my_id, send, recv, b, iterations) as rand_generator:
         for i in range(k):
             randoms[i] = await rand_generator.get()
-    total_time = time()-stime
-    logging.info("Batch size: %d, Iterations: %s, n: %d, t: %d", b, iterations, b, t)
-    logging.info("Total generated [%d/%d] in %f [%f/second].",
+    total_time = time()-start_time
+    logging.info("[PREPROCESSING] COUNT: %d/%d. TIME: %f. PER SECOND: %f/second.",
                  k, e, total_time, k/total_time)
-    logging.info("Number of unique values: %d/%d", len(set(randoms)), k)
+    logging.info("[PREPROCESSING] Unique values: %d/%d.", len(set(randoms)), k)
     return randoms
 
 
-async def _mpc_prog(context, randoms):
+async def _mpc_prog(context, randoms, get_bytes):
     values = await randoms
+    sent_bytes = get_bytes()
+    logging.info("[PREPROCESSING] BYTES: %d", sent_bytes)
     assert all(v is not None for v in values)
     stime = time()
     await context.ShareArray(values).open()
-    logging.info("Batch opening - %d. Time: %f", len(values), time()-stime)
+    logging.info("[BATCH OPENING] COUNT: %d. TIME: %f. BYTES: %d.",
+                 len(values), time()-stime, get_bytes()-sent_bytes)
 
 
 async def _prog(peers, n, t, my_id):
     async with ProcessProgramRunner(peers, n, t, my_id) as runner:
         send, recv = runner.get_send_recv(0)
         task = asyncio.create_task(get_randoms(n, t, my_id, send, recv))
-        runner.execute(1, _mpc_prog, randoms=task)
+        runner.execute(1, _mpc_prog, randoms=task,
+                       get_bytes=runner.node_communicator.get_sent_bytes)
 
 
 if __name__ == "__main__":

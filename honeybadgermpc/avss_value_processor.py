@@ -241,7 +241,3 @@ class AvssValueProcessor(object):
     def __exit__(self, type, value, traceback):
         for task in self.tasks:
             task.cancel()
-        input_batches = sum(map(len, self.inputs_per_dealer))
-        output_batches = sum(map(len, self.outputs_per_dealer))
-        logging.info("[VALUE PROCESSOR]: %d/%d, Queue: %d",
-                     input_batches, output_batches, self.output_queue.qsize())

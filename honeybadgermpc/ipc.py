@@ -22,8 +22,6 @@ class NodeCommunicator(object):
         self.my_id = my_id
 
         self.bytes_sent = 0
-        self.benchmark_logger = logging.LoggerAdapter(
-            logging.getLogger("benchmark_logger"), {"node_id": my_id})
 
         self._dealer_tasks = []
         self._router_task = None
@@ -50,8 +48,11 @@ class NodeCommunicator(object):
         await self._setup()
         return self
 
+    def get_sent_bytes(self):
+        return self.bytes_sent
+
     async def __aexit__(self, exc_type, exc, tb):
-        self.benchmark_logger.info("Total bytes sent out: %d", self.bytes_sent)
+        logging.debug("[IPC] Total bytes sent out: %d", self.bytes_sent)
         # Add None to the sender queues and drain out all the messages.
         for i in range(len(self._sender_queues)):
             if i != self.my_id:

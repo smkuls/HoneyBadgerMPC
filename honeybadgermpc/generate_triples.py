@@ -34,11 +34,12 @@ class TripleGenerator(PreProcessingBase):
 async def get_triples(n, t, my_id, send, recv):
     iterations = HbmpcConfig.extras.get("iterations", 3)
     b = HbmpcConfig.extras.get("b", 2**10)
-    logging.info("ITERATIONS: %d, AVSS BATCH SIZE: %d", iterations, b)
+    logging.info("[TRIPLE GENERATION] N: %d, T: %d, ITERATIONS: %d, AVSS BATCH SIZE: %d",
+                 n, t, iterations, b)
     c = 0
     e = iterations*b*n
-    stime = time()
     batches = [None]*b*(iterations)
+    stime = time()
     async with TripleGenerator(
             n, t, my_id, send, recv, b, iterations) as triple_generator:
         for i in range(b*(iterations)):
@@ -54,22 +55,25 @@ async def get_triples(n, t, my_id, send, recv):
                 c += 1
             batches[i] = batch
     total_time = time()-stime
-    logging.info("Batch size: %d, Iterations: %s, n: %d, t: %d", b, iterations, b, t)
-    logging.info("Generated [%d/%d] in %f [%f/second].", c, e, total_time, c/total_time)
+    logging.info("[PREPROCESSING] COUNT: %d/%d. TIME: %f. PER SECOND: %f/second.",
+                 c, e, total_time, c/total_time)
     return batches
 
 
-async def _mpc_prog(context, triples):
+async def _mpc_prog(context, triples, get_bytes):
     values = await triples
+    preprocessing_bytes = get_bytes()
+    logging.info("[PREPROCESSING] BYTES: %d", preprocessing_bytes)
     assert all(v is not None for v in values)
     p, q, pq = list(zip(*values))
     tasks = [None]*len(values)
     for i, v in enumerate(values):
         p, q, pq = v
         tasks[i] = asyncio.create_task(refine_triples(context, p, q, pq))
-    stime = time()
+    start_time = time()
     refined_triples = await asyncio.gather(*tasks)
-    etime = time()-stime
+    refinement_time = time()-start_time
+    refinement_bytes = get_bytes()
     to_open = []
     for triple in refined_triples:
         for j in zip(*triple):
@@ -78,12 +82,16 @@ async def _mpc_prog(context, triples):
             to_open.append(p)
             to_open.append(q)
             to_open.append(pq)
-    stime = time()
+    start_time = time()
     opened_vals = await context.ShareArray(to_open).open()
-    logging.info("Triple refinement - %d. Time : %f", len(to_open)/3, etime)
-    logging.info("Batch opening - %d. Time: %f", len(to_open), time()-stime)
-    logging.info("Number of unique values: %d/%d",
+    end_time = time()
+    logging.info("[REFINEMENT] TRIPLES COUNT: %d. TIME : %f. BYTES: %d",
+                 len(to_open)/3, refinement_time, refinement_bytes-preprocessing_bytes)
+    logging.info("[BATCH OPENING] COUNT: %d. TIME: %f. BYTES: %d.",
+                 len(to_open), end_time-start_time, get_bytes()-refinement_bytes)
+    logging.info("[PREPROCSSING] Unique Values: %d/%d",
                  len(set(opened_vals)), len(opened_vals))
+
     for i in range(0, len(opened_vals), 3):
         p = opened_vals[i]
         q = opened_vals[i+1]
@@ -96,7 +104,8 @@ async def _prog(peers, n, t, my_id):
     async with ProcessProgramRunner(peers, n, t, my_id) as runner:
         send, recv = runner.get_send_recv(0)
         task = asyncio.create_task(get_triples(n, t, my_id, send, recv))
-        runner.execute(31, _mpc_prog, triples=task)
+        runner.execute(1, _mpc_prog, triples=task,
+                       get_bytes=runner.node_communicator.get_sent_bytes)
 
 
 if __name__ == "__main__":
