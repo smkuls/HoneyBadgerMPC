@@ -1,7 +1,10 @@
 import logging
 import asyncio
 from pickle import dumps, loads
-from honeybadgermpc.betterpairing import ZR, interpolate_g1_at_x
+from honeybadgermpc.betterpairing import ZR, interpolate_g1_at_x, G1
+from honeybadgermpc.config import HbmpcConfig
+from honeybadgermpc.ipc import ProcessProgramRunner
+from honeybadgermpc.poly_commit_const import gen_pc_const_crs
 from honeybadgermpc.polynomial import polynomials_over
 from honeybadgermpc.poly_commit_const import PolyCommitConst
 from honeybadgermpc.poly_commit_lin import PolyCommitLin
@@ -17,7 +20,7 @@ from honeybadgermpc.batch_reconstruction import subscribe_recv
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 # Uncomment this when you want logs from this file.
-# logger.setLevel(logging.NOTSET)
+logger.setLevel(logging.NOTSET)
 
 
 class HbAVSSMessageType:
@@ -505,22 +508,71 @@ class HbAvssBatch():
             # dispersal_msg_list: the list of payload z
             broadcast_msg, dispersal_msg_list = self._get_dealer_msg(values, n)
 
-        tag = f"{dealer_id}-{avss_id}-B-AVID"
+        tag = f"{dealer_id}-{avss_id}-B-RBC"
         send, recv = self.get_send(tag), self.subscribe_recv(tag)
 
         logger.debug("[%d] Starting reliable broadcast", self.my_id)
         rbc_msg = await reliablebroadcast(
             tag, self.my_id, n, self.t, dealer_id, broadcast_msg, recv, send)
 
+        tag = f"{dealer_id}-{avss_id}-B-AVID"
+        send, recv = self.get_send(tag), self.subscribe_recv(tag)
+
         logger.debug("[%d] Starting AVID disperse", self.my_id)
         avid = AVID(n, self.t, dealer_id, recv, send, n)
-        # start disperse in the background
-        self.avid_msg_queue.put_nowait((avid, tag, dispersal_msg_list))
 
         if client_mode and self.my_id == dealer_id:
             # In client_mode, the dealer is not supposed to do
             # anything after sending the initial value.
+            await avid.disperse(tag, self.my_id, dispersal_msg_list, client_mode=True)
+            self.shares_future.set_result(True)
             return
+
+        # start disperse in the background
+        self.avid_msg_queue.put_nowait((avid, tag, dispersal_msg_list))
 
         # avss processing
         await self._process_avss_msg(avss_id, dealer_id, rbc_msg, avid)
+
+
+def get_avss_params(n, t):
+    g, h = G1.rand(seed=[0, 0, 0, 1]), G1.rand(seed=[0, 0, 0, 1])
+    public_keys, private_keys = [None]*n, [None]*n
+    for i in range(n):
+        private_keys[i] = ZR.random(0)
+        public_keys[i] = pow(g, private_keys[i])
+    return g, h, public_keys, private_keys
+
+
+async def _run(peers, n, t, my_id):
+    g, h, pks, sks = get_avss_params(n + 1, t)
+    async with ProcessProgramRunner(peers, n+1, t, my_id) as runner:
+        send, recv = runner.get_send_recv('1')
+        crs = gen_pc_const_crs(t, g=g, h=h)
+        values = None
+        dealer_id = n
+        if my_id == n:
+            # Dealer
+            values = [ZR.random(0)] * (t + 1)
+            logger.info("Starting DEALER")
+        else:
+            logger.info("Starting RECIPIENT: %d", my_id)
+
+        with HbAvssBatch(pks, sks[my_id], crs, n, t, my_id, send, recv) as hbavss:
+            hbavss_task = asyncio.create_task(hbavss.avss(
+                0, dealer_id=dealer_id, values=values, client_mode=True))
+            share = await hbavss.shares_future
+            if my_id != n:
+                logger.info("Share is: %s", share)
+            hbavss_task.cancel()
+
+
+if __name__ == '__main__':
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    loop = asyncio.get_event_loop()
+
+    try:
+        loop.run_until_complete(
+            _run(HbmpcConfig.peers, HbmpcConfig.N, HbmpcConfig.t, HbmpcConfig.my_id))
+    finally:
+        loop.close()
